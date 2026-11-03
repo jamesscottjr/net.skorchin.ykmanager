@@ -1,0 +1,96 @@
+package net.skorchin.ykmanager.yubi
+
+import android.app.Application
+import com.yubico.yubikit.management.Capability
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+enum class Screen(val title: String, val capability: Capability? = null) {
+    HOME("Home"),
+    ACCOUNTS("Accounts", Capability.OATH),
+    PASSKEYS("Passkeys", Capability.FIDO2),
+    FINGERPRINTS("Fingerprints", Capability.FIDO2),
+    CERTIFICATES("Certificates", Capability.PIV),
+    SLOTS("OTP slots", Capability.OTP),
+    OPENPGP("OpenPGP", Capability.OPENPGP),
+    APPLICATIONS("Applications"),
+    RECIPES("Recipes"),
+    RESET("Factory reset"),
+    ABOUT("About & legal");
+
+    /** Whether this screen makes sense for the connected key (unknown key: show everything). */
+    fun availableFor(info: KeyInfo?): Boolean {
+        if (info == null) return true
+        if (this == FINGERPRINTS) return info.isBio
+        val cap = capability ?: return true
+        return info.supports(cap)
+    }
+}
+
+class AppViewModel(app: Application) : AndroidViewModel(app) {
+
+    val core = YubiKeyCore(app)
+    val otp = OtpFeature(core, app)
+    val oath = OathFeature(core)
+    val piv = PivFeature(core)
+    val fido = FidoFeature(core)
+    val pgp = OpenPgpFeature(core)
+    val mgmt = ManagementFeature(core)
+    val recipes = RecipeFeature(core, otp, mgmt, app)
+
+    private val _screen = MutableStateFlow(Screen.HOME)
+    val screen: StateFlow<Screen> = _screen.asStateFlow()
+
+    init {
+        core.screenRefresher = { device ->
+            when (_screen.value) {
+                Screen.ACCOUNTS -> oath.refresh(device)
+                Screen.PASSKEYS -> fido.refresh(device)
+                Screen.FINGERPRINTS -> fido.refresh(device)
+                Screen.CERTIFICATES -> piv.refresh(device)
+                Screen.OPENPGP -> pgp.refresh(device)
+                Screen.SLOTS -> otp.rebuild()
+                else -> Unit
+            }
+        }
+        core.onKeyChanged = {
+            oath.clear(); piv.clear(); fido.clear(); pgp.clear()
+        }
+        viewModelScope.launch {
+            core.keyInfo.collect { info ->
+                otp.rebuild()
+                if (info != null && !_screen.value.availableFor(info)) _screen.value = Screen.HOME
+            }
+        }
+        // Keep TOTP codes fresh while a key is plugged in over USB.
+        viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                if (_screen.value == Screen.ACCOUNTS && core.isUsb && !core.busy.value) {
+                    val st = oath.state.value
+                    val now = System.currentTimeMillis()
+                    val expired = st.loaded && !st.locked && st.entries.any {
+                        it.isTotp && it.code != null && it.code.validUntil <= now
+                    }
+                    if (expired && now - st.readAt > 3000) core.refreshNow()
+                }
+            }
+        }
+    }
+
+    fun navigate(s: Screen) {
+        if (_screen.value == s) return
+        _screen.value = s
+        if (core.isUsb) core.refreshNow()
+    }
+
+    override fun onCleared() {
+        core.close()
+        super.onCleared()
+    }
+}
