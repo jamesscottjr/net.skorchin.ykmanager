@@ -59,6 +59,7 @@ data class SlotHistory(
     }.toString()
 
     companion object {
+
         fun fromJson(s: String): SlotHistory? = runCatching {
             val o = JSONObject(s)
             val d = o.getJSONObject("details")
@@ -426,12 +427,65 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
         }
     }
 
-    fun setNdef(slot: Slot, uri: String, accessCodeHex: String) {
+    /**
+     * Point the NFC (NDEF) tag at [slot], prefixed with [prefix] as a URI or as
+     * plain text.
+     *
+     * YubiKit's setNdefConfiguration() insists on parsing a 6-byte status from
+     * the reply. Over the smart card interface (NFC, or USB when the keyboard
+     * interface is off) the key acknowledges the NDEF command with an empty
+     * body, which made that call throw IndexOutOfBoundsException after the
+     * write had already succeeded. The command is therefore sent directly
+     * here and the reply is only checked for a success status word.
+     */
+    fun setNdef(slot: Slot, prefix: String, asText: Boolean, accessCodeHex: String) {
         core.run("configure NFC output") { device ->
-            val prefix = uri.trim().ifBlank { null }
-            core.otp(device) { it.setNdefConfiguration(slot, prefix, parseAccessCode(accessCodeHex)) }
-            core.toast("NFC (NDEF) output now uses slot ${slot.num}")
+            val acc = parseAccessCode(accessCodeHex)
+            val data = buildNdefConfig(prefix.trim(), asText) + (acc ?: ByteArray(6))
+            val cmd: Byte = if (slot == Slot.ONE) 0x08 else 0x09
+            val usb = device as? com.yubico.yubikit.android.transport.usb.UsbYubiKeyDevice
+            if (usb != null && usb.supportsConnection(com.yubico.yubikit.core.otp.OtpConnection::class.java)) {
+                // Keyboard (HID) interface: YubiKit's own implementation is fine here.
+                try {
+                    core.otp(device) { it.setNdefConfiguration(slot, if (asText) null else prefix.trim().ifBlank { null }, acc) }
+                } catch (e: IndexOutOfBoundsException) {
+                    // Status could not be parsed but the key accepted the frame.
+                }
+                if (asText) throw UserFacingException(
+                    "Plain-text NDEF can only be written over NFC or the smart card interface. Tap the key over NFC instead.")
+            } else {
+                core.smartCard(device) { c ->
+                    val p = com.yubico.yubikit.core.smartcard.SmartCardProtocol(c)
+                    p.select(com.yubico.yubikit.core.smartcard.AppId.OTP)
+                    // Throws ApduException on any non-9000 status word; the body may be empty.
+                    p.sendAndReceive(com.yubico.yubikit.core.smartcard.Apdu(0, 0x01, cmd.toInt(), 0, data))
+                }
+            }
+            core.toast("NFC (NDEF) output now uses slot ${slot.num}" +
+                (if (asText) " as text" else "") + (if (prefix.isBlank()) "" else " with prefix \"${prefix.trim()}\""))
         }
+    }
+
+    private fun buildNdefConfig(prefix: String, asText: Boolean): ByteArray {
+        val payload: ByteArray
+        val type: Byte
+        if (asText) {
+            // NFC Forum text record: status byte (UTF-8, language length) + language code + text
+            val lang = "en".toByteArray()
+            payload = byteArrayOf(lang.size.toByte()) + lang + prefix.toByteArray(Charsets.UTF_8)
+            type = 'T'.code.toByte()
+        } else {
+            var uri = prefix.ifBlank { YubiOtpSession.DEFAULT_NDEF_URI }
+            var idCode = 0
+            for ((i, pfx) in NDEF_URL_PREFIXES.withIndex()) {
+                if (uri.startsWith(pfx)) { idCode = i + 1; uri = uri.substring(pfx.length); break }
+            }
+            payload = byteArrayOf(idCode.toByte()) + uri.toByteArray(Charsets.UTF_8)
+            type = 'U'.code.toByte()
+        }
+        if (payload.size > NDEF_DATA_SIZE) throw UserFacingException(
+            "The NDEF prefix is too long (max ${NDEF_DATA_SIZE - (if (asText) 3 else 1)} characters after the standard URI prefix)")
+        return ByteBuffer.allocate(2 + NDEF_DATA_SIZE).put(payload.size.toByte()).put(type).put(payload).array()
     }
 
     private fun parseAccessCode(hex: String): ByteArray? {
@@ -443,6 +497,13 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
     }
 
     companion object {
+        private const val NDEF_DATA_SIZE = 54
+        private val NDEF_URL_PREFIXES = arrayOf(
+            "http://www.", "https://www.", "http://", "https://", "tel:", "mailto:", "ftp://anonymous:anonymous@",
+            "ftp://ftp.", "ftps://", "sftp://", "smb://", "nfs://", "ftp://", "dav://", "news:", "telnet://", "imap:",
+            "rtsp://", "urn:", "pop:", "sip:", "sips:", "tftp:", "btspp://", "btl2cap://", "btgoep://", "tcpobex://",
+            "irdaobex://", "file://", "urn:epc:id:", "urn:epc:tag:", "urn:epc:pat:", "urn:epc:raw:", "urn:epc:", "urn:nfc:",
+        )
         private const val MODHEX = "cbdefghijklnrtuv"
 
         fun classifyOutput(raw: String, serial: Int?): Identification? {

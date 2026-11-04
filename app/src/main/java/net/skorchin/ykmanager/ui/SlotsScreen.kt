@@ -134,11 +134,13 @@ fun SlotsScreen(vm: AppViewModel) {
 
         SlotAction.Ndef -> FormDialog("NFC (NDEF) output", listOf(
             Field.Choice("slot", "Slot sent when tapped over NFC", listOf("Slot 1", "Slot 2")),
-            Field.Text("uri", "URI prefix", "https://my.yubico.com/yk/#",
-                supporting = "Leave empty to send the OTP as plain text"),
+            Field.Choice("type", "Payload type", listOf("URI (opens a link)", "Plain text")),
+            Field.Text("uri", "Prefix", "https://my.yubico.com/yk/#",
+                supporting = "The OTP is appended to this. For URI, empty = Yubico's default; for text, empty = OTP only."),
             Field.Text("acc", "Access code (hex, if set)"),
+            Field.Note("Only slots with Yubico OTP or OATH-HOTP produce a usable NDEF output."),
         ), "Save", onDismiss = { action = null }) { v ->
-            vm.otp.setNdef(if (v.choice("slot") == 0) Slot.ONE else Slot.TWO, v.text("uri"), v.text("acc")); null
+            vm.otp.setNdef(if (v.choice("slot") == 0) Slot.ONE else Slot.TWO, v.text("uri"), v.choice("type") == 1, v.text("acc")); null
         }
 
         null -> Unit
