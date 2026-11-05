@@ -301,6 +301,11 @@ class FidoFeature(private val core: YubiKeyCore) {
         val pin = rememberedPin ?: return core.error("Unlock with your PIN first")
         core.run("delete the passkey") { device ->
             core.fido(device) { s -> credMgmt(s, s.cachedInfo, pin).deleteCredential(passkey.credentialId) }
+            // Reflect the deletion immediately; the refresh that follows may not reach the key over NFC.
+            _state.value = _state.value.copy(
+                passkeys = _state.value.passkeys?.filterNot { it.credentialId == passkey.credentialId },
+                existingCount = _state.value.existingCount?.let { (it - 1).coerceAtLeast(0) },
+            )
             core.toast("Passkey for ${passkey.rpId} deleted")
         }
     }

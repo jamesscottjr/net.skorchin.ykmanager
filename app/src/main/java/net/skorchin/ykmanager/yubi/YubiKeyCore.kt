@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.IOException
@@ -202,7 +203,7 @@ class YubiKeyCore(app: Application) {
                     _tapPrompt.value = null
                     runGuarded(once.first) { once.second(device) }
                 }
-                refreshAll(device)
+                runGuarded("read the YubiKey") { refreshAll(device) }
             }
         }
     }
@@ -243,8 +244,28 @@ class YubiKeyCore(app: Application) {
         _tapPrompt.value = null
         launchJob(device) {
             if (action != null) runGuarded(action.first) { action.second(device) }
-            refreshAll(device)
+            refreshAfterNfc(device, action != null)
             _link.value = Link.NFC
+        }
+    }
+
+    /**
+     * Refresh after an NFC interaction. If the key can no longer be reached
+     * (lifted off, or still busy after a write) the action itself has already
+     * been reported, so instead of a failure the user is asked to tap again.
+     */
+    private suspend fun refreshAfterNfc(device: NfcYubiKeyDevice, afterAction: Boolean) {
+        val ok = try {
+            refreshAll(device); true
+        } catch (e: Exception) {
+            if (e is UserFacingException) throw e
+            false
+        }
+        if (!ok) {
+            nfcDevice = null
+            pending = "read the YubiKey" to { _ -> }
+            _tapPrompt.value = if (afterAction) "Done. Lift your YubiKey and tap it again to refresh what is shown."
+                else "The YubiKey moved away before it could be read. Tap it again."
         }
     }
 
@@ -261,7 +282,7 @@ class YubiKeyCore(app: Application) {
         if (usb != null) {
             launchJob(usb) {
                 runGuarded(name) { action(usb) }
-                if (refresh) refreshAll(usb)
+                if (refresh) runGuarded("read the YubiKey") { refreshAll(usb) }
             }
         } else {
             runOnNfc(name, action, refresh)
@@ -284,7 +305,7 @@ class YubiKeyCore(app: Application) {
             val present = runCatching { connect(nfc, SmartCardConnection::class.java) { true } }.getOrDefault(false)
             if (present) {
                 runGuarded(name) { action(nfc) }
-                if (refresh) refreshAll(nfc)
+                if (refresh) refreshAfterNfc(nfc, afterAction = true)
             } else {
                 nfcDevice = null
                 pending = name to action
@@ -306,7 +327,7 @@ class YubiKeyCore(app: Application) {
 
     fun refreshNow() {
         val usb = usbDevice
-        if (usb != null) launchJob(usb) { refreshAll(usb) }
+        if (usb != null) launchJob(usb) { runGuarded("read the YubiKey") { refreshAll(usb) } }
         else {
             pending = null
             runOnNfc("read the YubiKey", { _ -> }, refresh = true)
@@ -344,11 +365,15 @@ class YubiKeyCore(app: Application) {
     private suspend fun refreshAll(device: YubiKeyDevice) {
         val old = _keyInfo.value
         val info = readKeyInfo(device)
+        if (info.deviceInfo == null && info.otpState == null) throw java.io.IOException("The YubiKey could not be read")
         if (old?.serial != null && info.serial != null && old.serial != info.serial) {
             onKeyChanged?.invoke()
         }
         _keyInfo.value = info
-        screenRefresher?.let { r -> runGuarded("read data") { r(device) } }
+        screenRefresher?.let { r ->
+            if (device is NfcYubiKeyDevice) r(device)       // failures handled by refreshAfterNfc
+            else runGuarded("read data") { r(device) }
+        }
     }
 
     private suspend fun readKeyInfo(device: YubiKeyDevice): KeyInfo {
@@ -417,15 +442,38 @@ class YubiKeyCore(app: Application) {
     // Connections and sessions
     // ------------------------------------------------------------------
 
-    /** Open a connection and run [block] while it is open. */
+    /** Marks a failure to open the connection, as opposed to a failure inside [connect]'s block. */
+    private class OpenFailed(cause: Throwable) : Exception(cause)
+
+    /**
+     * Open a connection and run [block] while it is open.
+     *
+     * Over NFC every call re-connects the ISO-DEP link, and Android refuses
+     * the reconnect with a bare IOException while the key is still busy
+     * (for instance writing flash right after a FIDO credential was deleted).
+     * Opening is therefore retried briefly; [block] itself is never re-run.
+     */
     suspend fun <C : YubiKeyConnection, T> connect(
         device: YubiKeyDevice,
         type: Class<C>,
         block: (C) -> T,
-    ): T = suspendCancellableCoroutine { cont ->
-        device.requestConnection(type) { result ->
-            val outcome = runCatching { block(result.value) }
-            cont.resumeWith(outcome)
+    ): T {
+        var attempt = 0
+        while (true) {
+            val outcome = suspendCancellableCoroutine<Result<T>> { cont ->
+                device.requestConnection(type) { result ->
+                    val conn = try { result.value } catch (e: Throwable) {
+                        cont.resume(Result.failure(OpenFailed(e))); return@requestConnection
+                    }
+                    cont.resume(runCatching { block(conn) })
+                }
+            }
+            val e = outcome.exceptionOrNull() ?: return outcome.getOrThrow()
+            if (e is OpenFailed) {
+                if (device is NfcYubiKeyDevice && attempt++ < 8) { delay(150); continue }
+                throw e.cause ?: e
+            }
+            throw e
         }
     }
 
