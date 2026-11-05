@@ -184,10 +184,11 @@ fun OpenPgpScreen(vm: AppViewModel) {
             SectionCard {
                 Text(keyRefName(k.ref), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
+                k.algorithm?.let { InfoRow("Algorithm", it) }
                 if (k.fingerprint == null) InfoRow("Status", "empty")
                 else {
                     InfoRow("Fingerprint", k.fingerprint.chunked(4).joinToString(" "))
-                    k.created?.let { InfoRow("Created", OtpFeature.formatTime(it * 1000)) }
+                    k.created?.let { InfoRow("Created", OtpFeature.formatTime(it)) }
                     k.status?.let { InfoRow("Origin", it.replace('_', ' ')) }
                 }
                 InfoRow("Touch", uifName(k.touch))

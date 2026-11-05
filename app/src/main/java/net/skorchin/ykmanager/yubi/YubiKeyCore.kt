@@ -119,6 +119,15 @@ class YubiKeyCore(app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private var usbDevice: UsbYubiKeyDevice? = null
+
+    /**
+     * The YubiKey from the most recent NFC tap. Android only reports a tag
+     * once while it stays in the field, so a follow-up action (for example
+     * unlocking OATH right after reading it) must reuse this device instead
+     * of waiting for a second tap that never comes while the key is still
+     * held against the phone.
+     */
+    private var nfcDevice: NfcYubiKeyDevice? = null
     private var usbStarted = false
     private var pending: Pair<String, DeviceAction>? = null
 
@@ -218,6 +227,7 @@ class YubiKeyCore(app: Application) {
 
     private fun onNfcTap(device: NfcYubiKeyDevice) {
         if (usbDevice != null) return // prefer the USB key while one is attached
+        nfcDevice = device
         val action = pending
         pending = null
         _tapPrompt.value = null
@@ -244,8 +254,32 @@ class YubiKeyCore(app: Application) {
                 if (refresh) refreshAll(usb)
             }
         } else {
+            runOnNfc(name, action, refresh)
+        }
+    }
+
+    /**
+     * Run [action] on the NFC key that is still on the phone if possible;
+     * otherwise ask for a tap and run it then.
+     */
+    private fun runOnNfc(name: String, action: DeviceAction, refresh: Boolean) {
+        val nfc = nfcDevice
+        if (nfc == null) {
             pending = name to action
             _tapPrompt.value = "Hold your YubiKey against the back of the phone to $name."
+            return
+        }
+        launchJob(nfc) {
+            // Probe first so an action is never started on a key that has gone away.
+            val present = runCatching { connect(nfc, SmartCardConnection::class.java) { true } }.getOrDefault(false)
+            if (present) {
+                runGuarded(name) { action(nfc) }
+                if (refresh) refreshAll(nfc)
+            } else {
+                nfcDevice = null
+                pending = name to action
+                _tapPrompt.value = "Hold your YubiKey against the back of the phone to $name."
+            }
         }
     }
 
@@ -265,8 +299,7 @@ class YubiKeyCore(app: Application) {
         if (usb != null) launchJob(usb) { refreshAll(usb) }
         else {
             pending = null
-            _tapPrompt.value = "Hold your YubiKey against the back of the phone to read it."
-            pending = "read the YubiKey" to { _ -> }
+            runOnNfc("read the YubiKey", { _ -> }, refresh = true)
         }
     }
 

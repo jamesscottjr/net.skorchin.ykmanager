@@ -536,13 +536,13 @@ class RecipeFeature(
             if (recipe.hasPgp && info.supports(Capability.OPENPGP)) {
                 recipe.pgpUserPin?.let { pin ->
                     step("OpenPGP user PIN") {
-                        core.smartCard(device) { c -> OpenPgpSession(c).changeUserPin("123456".toCharArray(), pin.toCharArray()) }
+                        core.smartCard(device) { c -> OpenPgpFeature.openSession(c).changeUserPin("123456".toCharArray(), pin.toCharArray()) }
                         "User PIN set" to null
                     }
                 }
                 recipe.pgpAdminPin?.let { pin ->
                     step("OpenPGP admin PIN") {
-                        core.smartCard(device) { c -> OpenPgpSession(c).changeAdminPin("12345678".toCharArray(), pin.toCharArray()) }
+                        core.smartCard(device) { c -> OpenPgpFeature.openSession(c).changeAdminPin("12345678".toCharArray(), pin.toCharArray()) }
                         "Admin PIN set" to null
                     }
                 }
