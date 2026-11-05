@@ -16,16 +16,32 @@ class ManagementFeature(private val core: YubiKeyCore) {
         return b
     }
 
-    private fun copyConfig(current: DeviceConfig, usb: Int?, nfc: Int?, chalrespTimeout: Int?, autoEject: Int?): DeviceConfig {
+    /**
+     * Build a configuration containing only the fields that actually change.
+     *
+     * Re-sending the whole current configuration (device flags, timeouts,
+     * NFC-restricted flag) made the YubiKey answer 0x6A80 "wrong data" when
+     * toggling an application, because some fields are only accepted in
+     * particular combinations. ykman and Yubico Authenticator send just the
+     * changed values, so this does the same.
+     */
+    private fun changedConfig(current: DeviceConfig, usb: Int?, nfc: Int?, chalrespTimeout: Int?, autoEject: Int?): DeviceConfig? {
         val b = DeviceConfig.Builder()
-        current.deviceFlags?.let { b.deviceFlags(it) }
-        (autoEject?.toShort() ?: current.autoEjectTimeout)?.let { b.autoEjectTimeout(it) }
-        (chalrespTimeout?.toByte() ?: current.challengeResponseTimeout)?.let { b.challengeResponseTimeout(it) }
-        current.nfcRestricted?.let { b.nfcRestricted(it) }
-        for (t in Transport.values()) current.getEnabledCapabilities(t)?.let { b.enabledCapabilities(t, it) }
-        usb?.let { b.enabledCapabilities(Transport.USB, it) }
-        nfc?.let { b.enabledCapabilities(Transport.NFC, it) }
-        return b.build()
+        var any = false
+        if (usb != null && usb != current.getEnabledCapabilities(Transport.USB)) { b.enabledCapabilities(Transport.USB, usb); any = true }
+        if (nfc != null && nfc != current.getEnabledCapabilities(Transport.NFC)) { b.enabledCapabilities(Transport.NFC, nfc); any = true }
+        if (chalrespTimeout != null && chalrespTimeout.toByte() != current.challengeResponseTimeout) {
+            b.challengeResponseTimeout(chalrespTimeout.toByte()); any = true
+        }
+        if (autoEject != null && autoEject.toShort() != current.autoEjectTimeout) { b.autoEjectTimeout(autoEject.toShort()); any = true }
+        return if (any) b.build() else null
+    }
+
+    private fun describeConfigError(e: Throwable): Nothing {
+        if (e is com.yubico.yubikit.core.smartcard.ApduException && e.sw == 0x6A80.toShort()) throw UserFacingException(
+            "The YubiKey rejected the configuration (0x6A80). Make sure every application you enable is " +
+                "supported on that interface and that the configuration lock code is correct.")
+        throw e
     }
 
     /**
@@ -40,14 +56,15 @@ class ManagementFeature(private val core: YubiKeyCore) {
         if (usb == 0) throw UserFacingException("At least one application must stay enabled over USB")
         if (info.hasDeviceConfig) {
             val code = lockCode(lockCodeHex)
-            core.management(device) { s ->
+            val written = core.management(device) { s ->
                 val cur = s.deviceInfo.config
                 val nfcArg = if (s.deviceInfo.hasTransport(Transport.NFC)) nfc else null
-                val cfg = copyConfig(cur, usb, nfcArg, chalrespTimeout, autoEject)
+                val cfg = changedConfig(cur, usb, nfcArg, chalrespTimeout, autoEject) ?: return@management false
                 val reboot = usb != null && usb != (cur.getEnabledCapabilities(Transport.USB) ?: usb)
-                s.updateDeviceConfig(cfg, reboot, code, null)
+                try { s.updateDeviceConfig(cfg, reboot, code, null) } catch (e: Exception) { describeConfigError(e) }
+                true
             }
-            return "Device configuration written"
+            return if (written) "Device configuration written" else "Already configured, nothing to change"
         }
         if (info.hasLegacyMode) {
             val caps = usb ?: return "Nothing to change"
@@ -67,22 +84,24 @@ class ManagementFeature(private val core: YubiKeyCore) {
         if (usb == 0) return core.error("At least one application must stay enabled over USB")
         core.run("apply the application settings") { device ->
             val code = lockCode(lockCodeHex)
-            core.management(device) { s ->
-                val cfg = copyConfig(s.deviceInfo.config, usb, nfc, null, null)
-                s.updateDeviceConfig(cfg, true, code, null)
+            val written = core.management(device) { s ->
+                val cfg = changedConfig(s.deviceInfo.config, usb, nfc, null, null) ?: return@management false
+                try { s.updateDeviceConfig(cfg, true, code, null) } catch (e: Exception) { describeConfigError(e) }
+                true
             }
-            core.toast("Settings applied. The YubiKey restarted.")
+            core.toast(if (written) "Settings applied. The YubiKey restarted." else "Nothing to change")
         }
     }
 
     fun applyTimeouts(chalrespTimeout: Int, autoEject: Int, lockCodeHex: String) {
         core.run("apply the timeouts") { device ->
             val code = lockCode(lockCodeHex)
-            core.management(device) { s ->
-                val cfg = copyConfig(s.deviceInfo.config, null, null, chalrespTimeout, autoEject)
-                s.updateDeviceConfig(cfg, false, code, null)
+            val written = core.management(device) { s ->
+                val cfg = changedConfig(s.deviceInfo.config, null, null, chalrespTimeout, autoEject) ?: return@management false
+                try { s.updateDeviceConfig(cfg, false, code, null) } catch (e: Exception) { describeConfigError(e) }
+                true
             }
-            core.toast("Timeouts saved")
+            core.toast(if (written) "Timeouts saved" else "Nothing to change")
         }
     }
 
@@ -97,8 +116,8 @@ class ManagementFeature(private val core: YubiKeyCore) {
                 else -> lockCode(newHex)!!
             }
             core.management(device) { s ->
-                val cfg = copyConfig(s.deviceInfo.config, null, null, null, null)
-                s.updateDeviceConfig(cfg, false, current, new)
+                // An otherwise empty configuration: only the lock code fields are sent.
+                try { s.updateDeviceConfig(DeviceConfig.Builder().build(), false, current, new) } catch (e: Exception) { describeConfigError(e) }
             }
             if (new.all { it.toInt() == 0 }) core.toast("Configuration lock code removed")
             else core.showDialog(
