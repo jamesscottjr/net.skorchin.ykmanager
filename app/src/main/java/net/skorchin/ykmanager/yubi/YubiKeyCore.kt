@@ -209,12 +209,22 @@ class YubiKeyCore(app: Application) {
 
     fun startNfcDiscovery(activity: Activity) {
         try {
-            yubiKit.startNfcDiscovery(NfcConfiguration().timeout(30_000), activity) { onNfcTap(it) }
+            // skipNdefCheck: don't let Android read the NDEF record on every tap. It is slower,
+            // makes the key emit an OTP for nothing, and is a path by which the system may act
+            // on the record itself instead of handing the tag to this app.
+            yubiKit.startNfcDiscovery(NfcConfiguration().timeout(30_000).skipNdefCheck(true), activity) { onNfcTap(it) }
             _nfcAvailable.value = true
         } catch (e: NfcNotAvailable) {
             _nfcAvailable.value = false
         }
     }
+
+    /** A tag delivered through an NFC intent rather than reader mode; treat it like a tap. */
+    fun onNfcIntentTag(tag: android.nfc.Tag) {
+        onNfcTap(NfcYubiKeyDevice(tag, 30_000, intentTagExecutor))
+    }
+
+    private val intentTagExecutor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun stopNfcDiscovery(activity: Activity) {
         yubiKit.stopNfcDiscovery(activity)
