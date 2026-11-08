@@ -69,11 +69,11 @@ Or open the folder in Android Studio and press Run. A pre-built release APK is i
 
 ### Release signing
 
-The project ships with a signing keystore so release builds install and update cleanly:
+Release builds are signed with a local keystore that is **not** stored in this repository (`.gitignore` excludes `*.jks`, `*.keystore` and `keystore.properties`):
 
-- Keystore: `keystore.jks` (alias `ykmanager`, RSA-2048, valid ~30 years)
-- Credentials: `keystore.properties` at the project root (password `ykmanager2026`)
-- `app/build.gradle.kts` picks these up automatically for the `release` build type.
+- Keystore: `keystore.jks` (alias `ykmanager`)
+- Credentials: `keystore.properties` at the project root with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`
+- `app/build.gradle.kts` picks these up automatically for the `release` build type, and falls back to the debug key if `keystore.properties` is missing.
 
 Keep `keystore.jks` safe — Android only installs an update over an existing install if it is signed with the same key. For a personal app this self-signed setup is fine; if you ever publish to Play you'd use Play App Signing.
 
