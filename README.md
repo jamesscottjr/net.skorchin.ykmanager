@@ -47,6 +47,28 @@ Device detection uses YubiKit's `support` module (`DeviceUtil.readInfo`), which 
 
 Fingerprint enrollment requires USB (the sensor is not powered over NFC). Behaviour on firmware 2.x/3.x follows YubiKit's documented support but has not been verified on physical hardware.
 
+## Passkey provider (Android 14+)
+
+Android's built-in support for security keys is unreliable for YubiKey passkeys: it often can't ask for the FIDO2 PIN over NFC or find passkeys stored on the key, so sign-ins fail. YK Manager v2.15 adds its own passkey provider for Android Credential Manager, the same approach Yubico's YubiKey Passkey Enabler uses. When a site or app asks for a passkey, Android shows "YubiKey" as an option and YK Manager runs the whole ceremony with your key.
+
+Setup:
+
+1. Open **Passkeys** in YK Manager and tap **Turn on** in the "Passkey provider" card (or go to Settings > Passwords, passkeys & accounts and enable YK Manager).
+2. In Chrome, open Settings > Autofill services and choose **Autofill using another service**, then restart Chrome. Without this, Chrome uses only Google Password Manager.
+3. Sign in or register on a site, pick **YubiKey** in the Android sheet, then tap or plug in the key. Enter the FIDO2 PIN when asked and touch the key when it blinks.
+
+What it handles:
+
+- PIN entry before the tap, so one NFC tap does PIN and signing together. Over USB the app checks first whether a PIN is needed.
+- Several passkeys for the same site: you get a picker. Account names are remembered on the phone (optional, can be cleared) so they appear in the Android sheet next time.
+- Keys with no PIN: "preferred" verification proceeds without one; if a site requires verification, the app offers to set a PIN. A key that demands a PIN change gets a change-PIN prompt.
+- Calls from browsers (checked against Google's list of privileged browsers) and from native apps (checked against the site's Digital Asset Links file).
+- Older U2F-only keys (YubiKey 4, NEO) for sites that allow non-discoverable credentials.
+
+Network use: the provider is the only feature that needs the INTERNET permission. It downloads Google's privileged browser list (bundled copy, refreshed at most daily) and, for native app callers, `https://<site>/.well-known/assetlinks.json`. No user data is sent.
+
+Status: the CTAP flow is covered by JVM unit tests against a software authenticator (`app/src/test/.../SoftAuthenticator.kt`), but it has not yet been tested on a phone with a real YubiKey.
+
 ## How NFC actions work
 
 USB-connected keys act immediately. For NFC, start an action in the UI and the app will ask you to **hold the YubiKey against the phone's NFC reader** — the action then runs during that tap (keep the key on the reader until the progress bar disappears). This mirrors how Yubico Authenticator works on Android.
@@ -58,6 +80,8 @@ USB-connected keys act immediately. For NFC, start an action in the UI and the a
 - To build: Android Studio (latest), JDK 17. The project uses AGP 8.13.2, Kotlin 2.2.10, compileSdk 36, YubiKit 3.1.0.
 
 ## Build & install
+
+Run unit tests with `./gradlew :app:testDebugUnitTest`.
 
 ```bash
 ./gradlew :app:assembleDebug      # debug build
@@ -109,7 +133,7 @@ All YubiKey communication is serialized on a single-threaded dispatcher (`YubiKe
 - OpenPGP card management — `openpgp` module
 - FIDO2 PIN reset and credential management — `fido` module (`CtapSession`)
 - Configuration lock code and slot access-code support
-- Tests with YubiKit's `support` module mock transport
+- Hardware testing of the passkey provider across YubiKey generations
 
 ## Sources
 

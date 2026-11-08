@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- USB OTG: works with any YubiKey 4/5 with a USB connector -->
     <uses-feature
@@ -16,6 +17,9 @@
 
     <uses-permission android:name="android.permission.NFC" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Passkey provider: checks a site's Digital Asset Links before an app may use its passkeys,
+         and refreshes Google's list of trusted browsers. No other network use. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -44,6 +48,34 @@
                 <data android:scheme="http" android:host="my.yubico.com" />
             </intent-filter>
         </activity>
+
+        <!-- Passkey provider (Android 14+): Settings > Passwords, passkeys & accounts. -->
+        <service
+            android:name=".passkey.YubiKeyPasskeyService"
+            android:enabled="@bool/passkey_provider_enabled"
+            android:exported="true"
+            android:icon="@drawable/ic_passkey_key"
+            android:label="YubiKey (YK Manager)"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE"
+            tools:targetApi="34">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/passkey_provider" />
+        </service>
+
+        <activity
+            android:name=".passkey.PasskeyActivity"
+            android:enabled="@bool/passkey_provider_enabled"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.YkManager.PasskeySheet"
+            tools:targetApi="34" />
     </application>
 
 </manifest>

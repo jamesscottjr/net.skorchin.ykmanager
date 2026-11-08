@@ -43,7 +43,6 @@ import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import java.util.Base64
 import java.util.Date
 
 data class PivSlotView(
@@ -380,7 +379,8 @@ class PivFeature(private val core: YubiKeyCore) {
         }
 
         fun pem(type: String, der: ByteArray): ByteArray {
-            val b64 = Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(der)
+            // android.util.Base64 (API 1) instead of java.util.Base64 (API 26), wrapped at 64 columns for PEM.
+            val b64 = android.util.Base64.encodeToString(der, android.util.Base64.NO_WRAP).chunked(64).joinToString("\n")
             return "-----BEGIN $type-----\n$b64\n-----END $type-----\n".toByteArray()
         }
 

@@ -188,6 +188,12 @@ class YubiKeyCore(app: Application) {
         usbStarted = true
         yubiKit.startUsbDiscovery(UsbConfiguration()) { device ->
             usbDevice = device
+            // A passkey prompt over another app owns the key right now; don't compete for it.
+            if (net.skorchin.ykmanager.passkey.PasskeyPromptState.active) {
+                _link.value = Link.USB
+                device.setOnClosed { if (usbDevice === device) { usbDevice = null; _link.value = Link.NONE; _keyInfo.value = null } }
+                return@startUsbDiscovery
+            }
             _link.value = Link.USB
             device.setOnClosed {
                 if (usbDevice === device) {

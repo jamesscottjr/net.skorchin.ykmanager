@@ -19,6 +19,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         vm.core.startUsbDiscovery()
+        // Keep the passkey provider's list of trusted browsers current (at most once a day).
+        Thread { net.skorchin.ykmanager.passkey.CallerVerifier.refreshAllowlistIfStale(applicationContext) }.start()
         setContent {
             YkManagerTheme {
                 AppRoot(vm)

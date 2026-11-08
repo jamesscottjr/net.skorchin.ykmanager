@@ -42,6 +42,7 @@ fun PasskeysScreen(vm: AppViewModel) {
     var toDelete by remember { mutableStateOf<Passkey?>(null) }
 
     ScreenColumn {
+        PasskeyProviderCard()
         if (!st.loaded) {
             NeedsKey("FIDO2 information") { vm.core.refreshNow() }
             return@ScreenColumn

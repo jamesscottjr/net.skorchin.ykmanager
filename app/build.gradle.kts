@@ -14,8 +14,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "2.14"
+        versionCode = 17
+        versionName = "2.15"
     }
 
     signingConfigs {
@@ -80,6 +80,9 @@ dependencies {
     implementation("com.yubico.yubikit:fido:$yubikit")
     implementation("com.yubico.yubikit:support:$yubikit")
 
+    // Android Credential Manager provider API (passkey provider, Android 14+)
+    implementation("androidx.credentials:credentials:1.6.0")
+
     // X.509 certificate / CSR generation and PKCS#12 / PEM import for PIV
     implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
@@ -104,6 +107,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 kotlin {
