@@ -129,6 +129,79 @@ object PasskeyJson {
         return json to mode
     }
 
+    /** What [prepareRegistration] did, for the diagnostics log. */
+    data class RegistrationInfo(val attestationRequested: String, val formatFromKey: String, val formatReturned: String)
+
+    /**
+     * Make a registration response look like what a browser returns for a
+     * security key, and keep every field consistent with attestationObject.
+     *
+     * - Attestation "none" (or unset): Chrome replaces a security key's
+     *   attestation with fmt "none" and a zero AAGUID. Many sites (banks in
+     *   particular) only accept "none" when that's what they asked for.
+     *   "direct", "indirect" and "enterprise" keep the key's attestation.
+     * - authenticatorData, publicKey and publicKeyAlgorithm are derived from
+     *   the returned attestationObject. Chrome rejects the response if they
+     *   differ in any byte from what it computes.
+     */
+    fun prepareRegistration(json: JSONObject, request: JSONObject?): RegistrationInfo {
+        val requested = request?.optString("attestation")?.ifBlank { null } ?: "none"
+        val r = json.optJSONObject("response") ?: return RegistrationInfo(requested, "?", "?")
+        val attBytes = java.util.Base64.getUrlDecoder().decode(r.getString("attestationObject"))
+        @Suppress("UNCHECKED_CAST")
+        val att = com.yubico.yubikit.fido.Cbor.decode(attBytes) as Map<String, Any?>
+        val fmt = att["fmt"] as? String ?: "?"
+        var authData = att["authData"] as ByteArray
+        var outFmt = fmt
+        if (requested == "none" && fmt != "none") {
+            authData = authData.copyOf()
+            if (authData.size >= 53 && (authData[32].toInt() and 0x40) != 0) {
+                for (i in 37 until 53) authData[i] = 0
+            }
+            val none = LinkedHashMap<String, Any>()
+            none["fmt"] = "none"
+            none["attStmt"] = emptyMap<String, Any>()
+            none["authData"] = authData
+            r.put("attestationObject", b64(com.yubico.yubikit.fido.Cbor.encode(none)))
+            outFmt = "none"
+        }
+        r.put("authenticatorData", b64(authData))
+
+        val cose = com.yubico.yubikit.fido.webauthn.AuthenticatorData
+            .parseFrom(java.nio.ByteBuffer.wrap(authData)).attestedCredentialData?.cosePublicKey
+        if (cose != null) {
+            (cose[3] as? Number)?.let { r.put("publicKeyAlgorithm", it.toInt()) }
+            val spki = spkiFromCose(cose)
+            if (spki != null) r.put("publicKey", b64(spki))
+        }
+        if (!r.has("transports")) r.put("transports", JSONArray())
+        return RegistrationInfo(requested, fmt, outFmt)
+    }
+
+    private val P256_SPKI_PREFIX = hex("3059301306072a8648ce3d020106082a8648ce3d030107034200")
+    private val ED25519_SPKI_PREFIX = hex("302a300506032b6570032100")
+
+    /**
+     * DER SubjectPublicKeyInfo for P-256 (named curve) and Ed25519 keys, the
+     * exact encoding Chrome computes. Other key types: null (YubiKit's value is kept).
+     */
+    fun spkiFromCose(cose: Map<Int, *>): ByteArray? {
+        val kty = (cose[1] as? Number)?.toInt()
+        val crv = (cose[-1] as? Number)?.toInt()
+        val x = cose[-2] as? ByteArray ?: return null
+        return when {
+            kty == 2 && crv == 1 -> {
+                val y = cose[-3] as? ByteArray ?: return null
+                if (x.size != 32 || y.size != 32) return null
+                P256_SPKI_PREFIX + byteArrayOf(0x04) + x + y
+            }
+            kty == 1 && crv == 6 && x.size == 32 -> ED25519_SPKI_PREFIX + x
+            else -> null
+        }
+    }
+
+    private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
     /** Back-compat for tests: placeholder only. */
     fun ensureClientDataField(json: JSONObject): JSONObject = finalizeResponse(json, null).first
 

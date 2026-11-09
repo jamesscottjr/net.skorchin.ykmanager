@@ -387,6 +387,18 @@ class PasskeyFlow(
         if (done) return
         done = true
         val raw = PasskeyJson.fromMap(cred.toMap(SerializationType.JSON))
+        if (isCreate) {
+            runCatching { PasskeyJson.prepareRegistration(raw, requestJson) }
+                .onSuccess { info ->
+                    runCatching {
+                        diag.put("attestation", JSONObject()
+                            .put("requested", info.attestationRequested)
+                            .put("fromKey", info.formatFromKey)
+                            .put("returned", info.formatReturned))
+                    }
+                }
+                .onFailure { e -> runCatching { diag.put("attestationError", "${e.javaClass.simpleName}: ${e.message}") } }
+        }
         val matched = browserHash?.let { h ->
             webOrigin?.let { o ->
                 PasskeyJson.matchBrowserClientData(h, if (isCreate) "webauthn.create" else "webauthn.get",
