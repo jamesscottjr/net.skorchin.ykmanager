@@ -75,15 +75,62 @@ object PasskeyJson {
     }
 
     /**
-     * Browser calls hand us only the clientDataHash, so YubiKit's JSON has
-     * no clientDataJSON. The browser substitutes its own; some parsers still
-     * expect the field, so add a placeholder.
+     * Browser calls hand us only clientDataHash. Recreate the clientDataJSON
+     * the browser built (Chrome's format, with and without its optional
+     * extra key) and return it only if its SHA-256 matches the hash we signed.
+     * Then the response is correct whether or not the browser swaps in its own copy.
      */
-    fun ensureClientDataField(json: JSONObject): JSONObject {
-        val r = json.optJSONObject("response") ?: return json
-        if (!r.has("clientDataJSON")) r.put("clientDataJSON", b64("{}".toByteArray()))
-        return json
+    fun matchBrowserClientData(hash: ByteArray, type: String, challenge: String, origin: String): ByteArray? {
+        val q = ::jsonString
+        val base = "{\"type\":${q(type)},\"challenge\":${q(challenge)},\"origin\":${q(origin)}"
+        val extra = ",\"other_keys_can_be_added_here\":\"do not compare clientDataJSON against a template. See https://goo.gl/yabPex\""
+        val candidates = listOf(
+            "$base,\"crossOrigin\":false}",
+            "$base,\"crossOrigin\":false$extra}",
+            "$base}",
+            "$base$extra}",
+        )
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return candidates.map { it.toByteArray(Charsets.UTF_8) }.firstOrNull { md.digest(it).contentEquals(hash) }
     }
+
+    /** JSON string literal as browsers write it: only quote, backslash and control characters escaped (no "\\/"). */
+    fun jsonString(v: String): String {
+        val sb = StringBuilder("\"")
+        for (c in v) when {
+            c == '"' -> sb.append("\\\"")
+            c == '\\' -> sb.append("\\\\")
+            c < ' ' -> sb.append(String.format("\\u%04x", c.code))
+            else -> sb.append(c)
+        }
+        return sb.append('"').toString()
+    }
+
+    /** How clientDataJSON in the response was produced, for the diagnostics log. */
+    enum class ClientDataMode { BUILT, MATCHED, PLACEHOLDER }
+
+    /**
+     * Shape the response the way Android passkey providers are expected to
+     * return it (as Google Password Manager, Bitwarden and KeePassDX do):
+     * authenticatorAttachment "platform", clientExtensionResults present, and
+     * a clientDataJSON value. If the browser gave only a hash and the JSON
+     * could not be recreated, a placeholder is used, which Android's
+     * guidance says the browser replaces.
+     */
+    fun finalizeResponse(json: JSONObject, matchedClientData: ByteArray?): Pair<JSONObject, ClientDataMode> {
+        json.put("authenticatorAttachment", "platform")
+        if (!json.has("clientExtensionResults")) json.put("clientExtensionResults", JSONObject())
+        val r = json.optJSONObject("response") ?: return json to ClientDataMode.BUILT
+        val mode = when {
+            matchedClientData != null -> { r.put("clientDataJSON", b64(matchedClientData)); ClientDataMode.MATCHED }
+            r.has("clientDataJSON") -> ClientDataMode.BUILT
+            else -> { r.put("clientDataJSON", b64("{}".toByteArray())); ClientDataMode.PLACEHOLDER }
+        }
+        return json to mode
+    }
+
+    /** Back-compat for tests: placeholder only. */
+    fun ensureClientDataField(json: JSONObject): JSONObject = finalizeResponse(json, null).first
 
     /** IDs from allowCredentials, in canonical base64url. */
     fun allowedIds(requestJson: String): Set<String> = runCatching {
@@ -95,10 +142,10 @@ object PasskeyJson {
     /** The clientDataJSON a browser would produce, for requests from native apps. */
     fun clientDataJson(type: String, challenge: String, origin: String, androidPackage: String?): ByteArray {
         val sb = StringBuilder()
-        sb.append("{\"type\":").append(JSONObject.quote(type))
-        sb.append(",\"challenge\":").append(JSONObject.quote(challenge))
-        sb.append(",\"origin\":").append(JSONObject.quote(origin))
-        if (androidPackage != null) sb.append(",\"androidPackageName\":").append(JSONObject.quote(androidPackage))
+        sb.append("{\"type\":").append(jsonString(type))
+        sb.append(",\"challenge\":").append(jsonString(challenge))
+        sb.append(",\"origin\":").append(jsonString(origin))
+        if (androidPackage != null) sb.append(",\"androidPackageName\":").append(jsonString(androidPackage))
         sb.append("}")
         return sb.toString().toByteArray(Charsets.UTF_8)
     }

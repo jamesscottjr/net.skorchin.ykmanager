@@ -185,6 +185,57 @@ class PasskeyCeremonyTest {
             .getString("authenticatorData").let { unb64(it)[32].toInt() and 0x04 })
     }
 
+    @Test fun browserSignInReturnsRealClientDataThatMatchesSignature() {
+        val key = SoftAuthenticator(pin = "123456")
+        register(key, "alice", "123456")
+        val req = getReq()
+        val challenge = req.getString("challenge")
+        val origin = "https://secure.example.com"
+        for (extra in listOf("", ",\"other_keys_can_be_added_here\":\"do not compare clientDataJSON against a template. See https://goo.gl/yabPex\"")) {
+            val chrome = "{\"type\":\"webauthn.get\",\"challenge\":\"$challenge\",\"origin\":\"$origin\",\"crossOrigin\":false$extra}".toByteArray()
+            val h = SoftAuthenticator.sha256(chrome)
+            val out = run(key, false, req, "123456", cd = ClientDataProvider.fromHash(h), domain = "secure.example.com") as PasskeyCeremony.Outcome.Done
+            val matched = PasskeyJson.matchBrowserClientData(h, "webauthn.get", challenge, origin)
+            assertArrayEquals(chrome, matched)
+            val (json, mode) = PasskeyJson.finalizeResponse(PasskeyJson.fromMap(out.credential.toMap(SerializationType.JSON)), matched)
+            assertEquals(PasskeyJson.ClientDataMode.MATCHED, mode)
+            assertEquals("platform", json.getString("authenticatorAttachment"))
+            assertTrue(json.has("clientExtensionResults"))
+            val r = json.getJSONObject("response")
+            val cdj = unb64(r.getString("clientDataJSON"))
+            assertEquals(origin, JSONObject(String(cdj)).getString("origin"))
+            val ok = Signature.getInstance("SHA256withECDSA").run {
+                initVerify(key.credentials.single().keys.public)
+                update(unb64(r.getString("authenticatorData")) + SoftAuthenticator.sha256(cdj)); verify(unb64(r.getString("signature")))
+            }
+            assertTrue("site-side verification must pass with the returned clientDataJSON", ok)
+        }
+    }
+
+    @Test fun unknownClientDataFormatFallsBackToPlaceholder() {
+        assertEquals(null, PasskeyJson.matchBrowserClientData(ByteArray(32), "webauthn.get", "abc", "https://x.com"))
+        val (json, mode) = PasskeyJson.finalizeResponse(JSONObject().put("response", JSONObject()), null)
+        assertEquals(PasskeyJson.ClientDataMode.PLACEHOLDER, mode)
+        assertTrue(json.getJSONObject("response").has("clientDataJSON"))
+    }
+
+    @Test fun clientDataDoesNotEscapeSlashes() {
+        val s = String(PasskeyJson.clientDataJson("webauthn.get", "abc", "https://a.com/x", null))
+        assertTrue(s, s.contains("\"origin\":\"https://a.com/x\""))
+    }
+
+    @Test fun diagnosticsSummarizeWithoutSecrets() {
+        val key = SoftAuthenticator(pin = "123456")
+        register(key, "alice", "123456")
+        val out = run(key, false, getReq(), "123456") as PasskeyCeremony.Outcome.Done
+        val (json, mode) = PasskeyJson.finalizeResponse(PasskeyJson.fromMap(out.credential.toMap(SerializationType.JSON)), null)
+        val d = PasskeyDiagnostics.summarizeResponse(json, false, mode)
+        assertEquals("UP,UV", d.getString("flags"))
+        assertTrue(!d.toString().contains(json.getJSONObject("response").getString("signature")))
+        val q = PasskeyDiagnostics.summarizeRequest(getReq(), false)
+        assertEquals(0, q.getInt("allowCredentials"))
+    }
+
     @Test fun allowedIdsAreNormalized() {
         val req = JSONObject().put("allowCredentials", JSONArray().put(JSONObject().put("id", "a+b/c==")))
         assertEquals(setOf("a-b_c"), PasskeyJson.allowedIds(req.toString()))

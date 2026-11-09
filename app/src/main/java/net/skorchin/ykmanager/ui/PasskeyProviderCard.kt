@@ -60,10 +60,13 @@ fun PasskeyProviderCard() {
     var askPinFirst by remember { mutableStateOf(store.askPinFirst) }
     var remember by remember { mutableStateOf(store.rememberAccounts) }
     var remembered by remember { mutableIntStateOf(store.accounts().size) }
+    var logCount by remember { mutableIntStateOf(store.logCount()) }
+    var showLog by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         enabled = isPasskeyProviderEnabled(context)
         remembered = store.accounts().size
+        logCount = store.logCount()
         onPauseOrDispose { }
     }
 
@@ -105,6 +108,28 @@ fun PasskeyProviderCard() {
                 SmallButton("Forget $remembered remembered ${if (remembered == 1) "account" else "accounts"}") {
                     store.clearAccounts(); remembered = 0
                 }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Diagnostics")
+        Hint(
+            if (logCount == 0) "The last 15 passkey requests will be listed here: what the site asked for and what was sent back. " +
+                "No PINs, challenges, signatures or keys are recorded."
+            else "$logCount recent passkey ${if (logCount == 1) "request" else "requests"} recorded. " +
+                "If a site rejects a sign-in, copy this and share it so the cause can be found. No PINs, signatures or keys are included."
+        )
+        if (logCount > 0) {
+            ButtonRow {
+                SmallButton("Copy log") {
+                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("YK Manager passkey log", store.logText()))
+                }
+                SmallButton(if (showLog) "Hide" else "Show") { showLog = !showLog }
+                SmallButton("Clear") { store.clearLog(); logCount = 0; showLog = false }
+            }
+            if (showLog) {
+                Text(store.logText(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
             }
         }
     }

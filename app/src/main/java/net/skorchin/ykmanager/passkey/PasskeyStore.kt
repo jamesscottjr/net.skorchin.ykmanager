@@ -103,7 +103,33 @@ class PasskeyStore(context: Context) {
         prefs.edit().putString(KEY_ACCOUNTS, arr.toString()).apply()
     }
 
+    // ------------------------------------------------------------------
+    // Diagnostics: the last few passkey requests, without secrets, so a
+    // failure at a website can be investigated. Never leaves the phone
+    // unless the user copies it.
+    // ------------------------------------------------------------------
+
+    @Synchronized
+    fun addLog(entry: JSONObject) {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")) }.getOrDefault(JSONArray())
+        val out = JSONArray().put(entry)
+        for (i in 0 until minOf(arr.length(), MAX_LOG - 1)) out.put(arr.get(i))
+        prefs.edit().putString(KEY_LOG, out.toString()).apply()
+    }
+
+    fun logText(): String {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")) }.getOrDefault(JSONArray())
+        return if (arr.length() == 0) "" else arr.toString(2)
+    }
+
+    fun logCount(): Int = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")).length() }.getOrDefault(0)
+
+    @Synchronized
+    fun clearLog() { prefs.edit().remove(KEY_LOG).apply() }
+
     private companion object {
+        const val KEY_LOG = "diagnostics_log"
+        const val MAX_LOG = 15
         const val KEY_ASK_PIN_FIRST = "ask_pin_first"
         const val KEY_REMEMBER = "remember_accounts"
         const val KEY_ACCOUNTS = "accounts"

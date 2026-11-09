@@ -65,6 +65,10 @@ What it handles:
 - Calls from browsers (checked against Google's list of privileged browsers) and from native apps (checked against the site's Digital Asset Links file).
 - Older U2F-only keys (YubiKey 4, NEO) for sites that allow non-discoverable credentials.
 
+Sign-in responses follow what Android expects from a passkey provider: `authenticatorAttachment` is reported as `platform` (as Google Password Manager, Bitwarden and KeePassDX do), `clientExtensionResults` is always present, and for browser requests the app rebuilds the browser's exact `clientDataJSON` and returns it when its hash matches the one that was signed (otherwise a placeholder the browser replaces).
+
+Diagnostics: the Passkeys screen keeps a log of the last 15 passkey requests (site, caller, requested options, returned flags and fields; no PINs, challenges, signatures or keys). Use Copy log when a site rejects a sign-in.
+
 Network use: the provider is the only feature that needs the INTERNET permission. It downloads Google's privileged browser list (bundled copy, refreshed at most daily) and, for native app callers, `https://<site>/.well-known/assetlinks.json`. No user data is sent.
 
 Status: the CTAP flow is covered by JVM unit tests against a software authenticator (`app/src/test/.../SoftAuthenticator.kt`), but it has not yet been tested on a phone with a real YubiKey.

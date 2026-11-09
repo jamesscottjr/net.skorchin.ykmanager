@@ -103,6 +103,9 @@ class PasskeyFlow(
     private var rpId: String = ""
     private var createUserName: String? = null
     private var createDisplayName: String? = null
+    private var browserHash: ByteArray? = null
+    private var webOrigin: String? = null
+    private val diag = JSONObject()
 
     private var usbDevice: UsbYubiKeyDevice? = null
     private var nfcDevice: NfcYubiKeyDevice? = null
@@ -125,6 +128,14 @@ class PasskeyFlow(
         preferredCredentialId: String?,
     ) {
         isCreate = create
+        runCatching {
+            diag.put("time", java.time.Instant.now().toString())
+            diag.put("app", "YK Manager ${appVersion()}")
+            diag.put("android", android.os.Build.VERSION.RELEASE)
+            diag.put("op", if (create) "create" else "get")
+            diag.put("caller", caller.packageName)
+            diag.put("clientDataHash", clientDataHash != null)
+        }
         _ui.update { it.copy(isCreate = create, title = if (create) "Save passkey to YubiKey" else "Sign in with YubiKey",
             instruction = "Checking the request…") }
 
@@ -138,6 +149,12 @@ class PasskeyFlow(
                 is CallerVerifier.Result.Allowed -> {
                     effectiveDomain = v.effectiveDomain
                     rpId = requestedRp ?: v.effectiveDomain
+                    runCatching {
+                        diag.put("origin", v.origin)
+                        diag.put("browser", v.isBrowser)
+                        diag.put("rpId", rpId)
+                        diag.put("request", PasskeyDiagnostics.summarizeRequest(raw, create))
+                    }
 
                     val normalized = if (create) PasskeyJson.normalizeCreate(raw)
                     else PasskeyJson.normalizeGet(raw, rpId).also { narrowToPreferred(it, preferredCredentialId) }
@@ -145,6 +162,8 @@ class PasskeyFlow(
 
                     clientData = if (clientDataHash != null && clientDataHash.size == 32) {
                         // The browser built clientDataJSON itself and only needs the signature.
+                        browserHash = clientDataHash
+                        webOrigin = v.origin.takeIf { v.isBrowser }
                         ClientDataProvider.fromHash(clientDataHash)
                     } else {
                         ClientDataProvider.fromClientDataJson(
@@ -367,7 +386,19 @@ class PasskeyFlow(
     private fun succeed(cred: PublicKeyCredential, chosenName: String?) {
         if (done) return
         done = true
-        val json = PasskeyJson.ensureClientDataField(PasskeyJson.fromMap(cred.toMap(SerializationType.JSON)))
+        val raw = PasskeyJson.fromMap(cred.toMap(SerializationType.JSON))
+        val matched = browserHash?.let { h ->
+            webOrigin?.let { o ->
+                PasskeyJson.matchBrowserClientData(h, if (isCreate) "webauthn.create" else "webauthn.get",
+                    requestJson?.optString("challenge").orEmpty(), o)
+            }
+        }
+        val (json, mode) = PasskeyJson.finalizeResponse(raw, matched)
+        runCatching {
+            diag.put("result", "returned to caller")
+            diag.put("response", PasskeyDiagnostics.summarizeResponse(json, isCreate, mode))
+            store.addLog(diag)
+        }
         val credId = PasskeyJson.b64(cred.rawId)
         runCatching {
             if (isCreate) {
@@ -459,9 +490,14 @@ class PasskeyFlow(
         }
     }
 
+    private fun appVersion(): String = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull() ?: "?"
+
     private fun fatal(message: String, dom: DomError) {
         lastDomError = dom
         lastErrorMessage = message
+        runCatching { diag.put("result", "error: $message"); store.addLog(diag) }
         _ui.update { it.copy(phase = Phase.FATAL, error = message, instruction = "") }
     }
 
@@ -472,6 +508,10 @@ class PasskeyFlow(
         commandState?.cancel()
         if (done) return
         done = true
+        if (_ui.value.phase != Phase.FATAL) runCatching {
+            diag.put("result", "cancelled" + (lastErrorMessage?.let { " after: $it" } ?: ""))
+            store.addLog(diag)
+        }
         val dom = lastDomError
         val msg = lastErrorMessage
         finish(
