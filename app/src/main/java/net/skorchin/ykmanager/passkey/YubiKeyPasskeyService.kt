@@ -49,9 +49,12 @@ class YubiKeyPasskeyService : CredentialProviderService() {
         callback: OutcomeReceiver<BeginCreateCredentialResponse, CreateCredentialException>,
     ) {
         if (request !is BeginCreatePublicKeyCredentialRequest) {
+            recordAsked("create", request.callingAppInfo?.packageName, null, null, 0, "not a passkey request")
             callback.onResult(BeginCreateCredentialResponse())
             return
         }
+        val rp = runCatching { JSONObject(request.requestJson).optJSONObject("rp")?.optString("id") }.getOrNull()
+        recordAsked("create", request.callingAppInfo?.packageName, rp, null, 1, null)
         val entry = CreateEntry.Builder("YubiKey", pendingIntent(create = true, credentialId = null))
             .setDescription("Save this passkey on your YubiKey. Tap it on the phone or plug it in.")
             .setIcon(icon())
@@ -66,10 +69,24 @@ class YubiKeyPasskeyService : CredentialProviderService() {
     ) {
         val store = PasskeyStore(this)
         val entries = mutableListOf<CredentialEntry>()
+        val caller = request.callingAppInfo?.packageName
+        var rpSeen: String? = null
+        var allowSeen: Int? = null
+        try {
         for (option in request.beginGetCredentialOptions.filterIsInstance<BeginGetPublicKeyCredentialOption>()) {
             val json = runCatching { JSONObject(option.requestJson) }.getOrNull() ?: continue
             val rpId = json.optString("rpId").ifBlank { null }
             val allowed = PasskeyJson.allowedIds(option.requestJson)
+            rpSeen = rpId; allowSeen = allowed.size
+
+            // "Test passkey sheet" in YK Manager: answer with a marker entry only.
+            if (caller == packageName && rpId == PASSKEY_SELF_TEST_RP_ID) {
+                entries += PublicKeyCredentialEntry.Builder(this, "YK Manager test", selfTestIntent(), option)
+                    .setDisplayName("YK Manager is working. Pick this to finish the test.")
+                    .setIcon(icon())
+                    .build()
+                continue
+            }
 
             // Accounts this YubiKey has been used with before on this site.
             val known = rpId?.let { store.accountsFor(it) }.orEmpty()
@@ -92,6 +109,16 @@ class YubiKeyPasskeyService : CredentialProviderService() {
                 .setIcon(icon())
                 .build()
         }
+        } catch (e: Exception) {
+            // Never fail silently: a crash here would just hide YK Manager from the sheet.
+            recordAsked("get", caller, rpSeen, allowSeen, entries.size, "${e.javaClass.simpleName}: ${e.message}")
+            callback.onResult(BeginGetCredentialResponse.Builder().setCredentialEntries(entries).build())
+            return
+        }
+        val options = request.beginGetCredentialOptions.size
+        val passkeyOptions = request.beginGetCredentialOptions.count { it is BeginGetPublicKeyCredentialOption }
+        recordAsked("get", caller, rpSeen, allowSeen, entries.size,
+            if (passkeyOptions == 0) "no passkey option in request ($options other)" else null)
         callback.onResult(BeginGetCredentialResponse.Builder().setCredentialEntries(entries).build())
     }
 
@@ -102,6 +129,29 @@ class YubiKeyPasskeyService : CredentialProviderService() {
     ) {
         // Nothing session-like is kept; passkeys live on the YubiKey.
         callback.onResult(null)
+    }
+
+    private fun recordAsked(kind: String, caller: String?, rpId: String?, allow: Int?, entries: Int, note: String?) {
+        runCatching {
+            PasskeyStore(this).addAsked(JSONObject().apply {
+                put("time", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date()))
+                put("kind", kind)
+                put("caller", caller ?: "(hidden)")
+                rpId?.let { put("site", it) }
+                allow?.let { put("allowCredentials", it) }
+                put("entries_offered", entries)
+                note?.let { put("note", it) }
+            })
+        }
+    }
+
+    private fun selfTestIntent(): PendingIntent {
+        val code = requestCodes.incrementAndGet()
+        val intent = Intent(this, PasskeyActivity::class.java)
+            .setAction(PasskeyActivity.ACTION_SELF_TEST)
+            .setData(Uri.parse("ykmanager-passkey://selftest/$code"))
+        return PendingIntent.getActivity(this, code, intent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     private fun icon(): Icon = Icon.createWithResource(this, R.drawable.ic_passkey_key)
@@ -119,7 +169,7 @@ class YubiKeyPasskeyService : CredentialProviderService() {
         )
     }
 
-    private companion object {
-        val requestCodes = AtomicInteger((System.currentTimeMillis() % 100_000).toInt())
+    companion object {
+        private val requestCodes = AtomicInteger((System.currentTimeMillis() % 100_000).toInt())
     }
 }

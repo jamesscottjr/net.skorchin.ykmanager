@@ -5,6 +5,10 @@ import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** Site name used by the in-app "Test passkey sheet" button; never a real domain. */
+const val PASSKEY_SELF_TEST_RP_ID = "selftest.ykmanager.invalid"
+const val PASSKEY_SELF_TEST_OK = "YK Manager self-test entry picked"
+
 /**
  * Small local store for the passkey provider:
  *
@@ -117,19 +121,47 @@ class PasskeyStore(context: Context) {
         prefs.edit().putString(KEY_LOG, out.toString()).apply()
     }
 
-    fun logText(): String {
-        val arr = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")) }.getOrDefault(JSONArray())
-        return if (arr.length() == 0) "" else arr.toString(2)
+    /**
+     * Records that Android asked YK Manager what it can offer (the step
+     * before the passkey sheet opens). If a sign-in never shows YK Manager
+     * and nothing is recorded here, Android or the browser never asked it.
+     */
+    @Synchronized
+    fun addAsked(entry: JSONObject) {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_ASKED, "[]")) }.getOrDefault(JSONArray())
+        val out = JSONArray().put(entry)
+        for (i in 0 until minOf(arr.length(), MAX_ASKED - 1)) out.put(arr.get(i))
+        prefs.edit().putString(KEY_ASKED, out.toString()).apply()
     }
 
-    fun logCount(): Int = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")).length() }.getOrDefault(0)
+    /** Newest "asked" entries first. */
+    fun asked(): List<JSONObject> = runCatching {
+        val arr = JSONArray(prefs.getString(KEY_ASKED, "[]"))
+        (0 until arr.length()).map { arr.getJSONObject(it) }
+    }.getOrDefault(emptyList())
+
+    fun logText(): String {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")) }.getOrDefault(JSONArray())
+        val asked = runCatching { JSONArray(prefs.getString(KEY_ASKED, "[]")) }.getOrDefault(JSONArray())
+        if (arr.length() == 0 && asked.length() == 0) return ""
+        return JSONObject()
+            .put("android_asked_yk_manager", asked)
+            .put("sign_ins", arr)
+            .toString(2)
+    }
+
+    fun logCount(): Int = runCatching {
+        JSONArray(prefs.getString(KEY_LOG, "[]")).length() + JSONArray(prefs.getString(KEY_ASKED, "[]")).length()
+    }.getOrDefault(0)
 
     @Synchronized
-    fun clearLog() { prefs.edit().remove(KEY_LOG).apply() }
+    fun clearLog() { prefs.edit().remove(KEY_LOG).remove(KEY_ASKED).apply() }
 
     private companion object {
         const val KEY_LOG = "diagnostics_log"
         const val MAX_LOG = 15
+        const val KEY_ASKED = "diagnostics_asked"
+        const val MAX_ASKED = 15
         const val KEY_ASK_PIN_FIRST = "ask_pin_first"
         const val KEY_REMEMBER = "remember_accounts"
         const val KEY_ACCOUNTS = "accounts"

@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +25,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPublicKeyCredentialOption
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import kotlinx.coroutines.launch
+import net.skorchin.ykmanager.passkey.PASSKEY_SELF_TEST_OK
+import net.skorchin.ykmanager.passkey.PASSKEY_SELF_TEST_RP_ID
 import net.skorchin.ykmanager.passkey.PasskeyStore
 import net.skorchin.ykmanager.passkey.YubiKeyPasskeyService
 
@@ -62,9 +71,14 @@ fun PasskeyProviderCard() {
     var remembered by remember { mutableIntStateOf(store.accounts().size) }
     var logCount by remember { mutableIntStateOf(store.logCount()) }
     var showLog by remember { mutableStateOf(false) }
+    var chrome by remember { mutableStateOf(BrowserPasskeySetup.status(context)) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LifecycleResumeEffect(Unit) {
         enabled = isPasskeyProviderEnabled(context)
+        chrome = BrowserPasskeySetup.status(context)
         remembered = store.accounts().size
         logCount = store.logCount()
         onPauseOrDispose { }
@@ -91,8 +105,64 @@ fun PasskeyProviderCard() {
         if (enabled != true) {
             Hint("In the list that opens, switch on \"YubiKey (YK Manager)\". Some phones call it Additional services.")
         }
-        Spacer(Modifier.height(4.dp))
-        Hint("Chrome: Settings > Autofill services > \"Autofill using another service\", then restart Chrome.")
+        Spacer(Modifier.height(8.dp))
+        if (chrome.isEmpty()) {
+            Hint("Chrome: Settings > Autofill services > \"Autofill using another service\", then restart Chrome.")
+        }
+        chrome.forEach { st ->
+            InfoRow(st.browser.label, when (st.usesAnotherService) {
+                true -> "Uses another service (good)"
+                false -> "Google Password Manager only"
+                null -> "Unknown (update Chrome)"
+            })
+            if (st.usesAnotherService != true) {
+                Hint("${st.browser.label} won't show YK Manager until you pick \"Autofill using another service\" " +
+                    "under Settings > Autofill services, then restart ${st.browser.label}. Clearing Chrome's data resets this.")
+                ButtonRow {
+                    SmallButton("Open ${st.browser.label} setting") {
+                        BrowserPasskeySetup.openChromeSettings(context, st.browser.packageName)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Test")
+        Hint("Opens Android's passkey sheet with a test request. If YK Manager is set up, a \"YK Manager test\" entry appears.")
+        ButtonRow {
+            SmallButton(if (testing) "Testing..." else "Test passkey sheet", enabled = !testing) {
+                val activity = context.findActivity() ?: return@SmallButton
+                testing = true; testResult = null
+                val started = System.currentTimeMillis()
+                scope.launch {
+                    val outcome: String = try {
+                        CredentialManager.create(activity).getCredential(activity, GetCredentialRequest(listOf(
+                            GetPublicKeyCredentialOption(selfTestRequestJson())
+                        )))
+                        "Unexpected answer from the sheet."
+                    } catch (e: GetCredentialException) {
+                        val asked = store.asked().any {
+                            it.optString("site") == PASSKEY_SELF_TEST_RP_ID &&
+                                runCatching { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                                    .parse(it.optString("time"))!!.time >= started - 2_000 }.getOrDefault(false)
+                        }
+                        when {
+                            e.errorMessage?.toString()?.contains(PASSKEY_SELF_TEST_OK) == true ->
+                                "Working: Android showed YK Manager and you picked it. If a site still doesn't list it, the browser is the cause (see the Chrome setting above)."
+                            asked && e is GetCredentialCancellationException ->
+                                "Working: Android asked YK Manager and showed it. The sheet was closed before picking the test entry."
+                            asked ->
+                                "Android asked YK Manager, but the sheet did not open (${e.type}). Copy the log below and share it."
+                            e is NoCredentialException || !asked ->
+                                "Not working: Android never asked YK Manager. Turn it on with the button above (as the preferred or an additional service), then try again."
+                            else -> "Test failed: ${e.type}"
+                        }
+                    }
+                    testResult = outcome; testing = false; logCount = store.logCount()
+                }
+            }
+        }
+        testResult?.let { Hint(it) }
 
         Spacer(Modifier.height(8.dp))
         ToggleRow("Ask for the PIN before the NFC tap", askPinFirst) {
@@ -114,7 +184,7 @@ fun PasskeyProviderCard() {
         Spacer(Modifier.height(8.dp))
         SectionTitle("Diagnostics")
         Hint(
-            if (logCount == 0) "The last 15 passkey requests will be listed here: what the site asked for and what was sent back. " +
+            if (logCount == 0) "Each time Android asks YK Manager for a passkey, and the last 15 sign-ins (what the site asked for and what was sent back), are listed here. " +
                 "No PINs, challenges, signatures or keys are recorded."
             else "$logCount recent passkey ${if (logCount == 1) "request" else "requests"} recorded. " +
                 "If a site rejects a sign-in, copy this and share it so the cause can be found. No PINs, signatures or keys are included."
@@ -133,6 +203,28 @@ fun PasskeyProviderCard() {
             }
         }
     }
+}
+
+private fun selfTestRequestJson(): String {
+    val challenge = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+    val b64 = android.util.Base64.encodeToString(challenge,
+        android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+    return org.json.JSONObject()
+        .put("challenge", b64)
+        .put("rpId", PASSKEY_SELF_TEST_RP_ID)
+        .put("allowCredentials", org.json.JSONArray())
+        .put("userVerification", "discouraged")
+        .put("timeout", 60_000)
+        .toString()
+}
+
+private fun Context.findActivity(): android.app.Activity? {
+    var c: Context? = this
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
 }
 
 @Composable

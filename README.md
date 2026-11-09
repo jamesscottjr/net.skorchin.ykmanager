@@ -67,9 +67,15 @@ What it handles:
 
 Sign-in responses follow what Android expects from a passkey provider: `authenticatorAttachment` is reported as `platform` (as Google Password Manager, Bitwarden and KeePassDX do), `clientExtensionResults` is always present, and for browser requests the app rebuilds the browser's exact `clientDataJSON` and returns it when its hash matches the one that was signed (otherwise a placeholder the browser replaces).
 
+If YK Manager never appears in the sign-in sheet (v2.17):
+
+- The Passkeys card shows whether YK Manager is on as a provider, and whether each installed Chrome channel has **Autofill using another service** on (read from Chrome's `AutofillThirdPartyModeContentProvider`; this is why the app declares `READ_USER_DICTIONARY`, which Chrome requires to read that one setting). A button opens Chrome's setting directly. Clearing Chrome's data resets it.
+- **Test passkey sheet** sends a test request (site `selftest.ykmanager.invalid`) through Android's Credential Manager. If a "YK Manager test" entry appears, Android and the provider are fine and any remaining problem is the browser's routing. If Android never asks YK Manager, the provider isn't enabled.
+- The diagnostics log now also records every time Android asks YK Manager for a passkey (caller, site, number of `allowCredentials`, entries offered) and any error while building the entries.
+
 Diagnostics: the Passkeys screen keeps a log of the last 15 passkey requests (site, caller, requested options, returned flags and fields; no PINs, challenges, signatures or keys). Use Copy log when a site rejects a sign-in.
 
-Network use: the provider is the only feature that needs the INTERNET permission. It downloads Google's privileged browser list (bundled copy, refreshed at most daily) and, for native app callers, `https://<site>/.well-known/assetlinks.json`. No user data is sent.
+Network use: the provider is the only feature that needs the INTERNET permission. `READ_USER_DICTIONARY` is used only to read Chrome's autofill setting; the user dictionary is never read. It downloads Google's privileged browser list (bundled copy, refreshed at most daily) and, for native app callers, `https://<site>/.well-known/assetlinks.json`. No user data is sent.
 
 Status: the CTAP flow is covered by JVM unit tests against a software authenticator (`app/src/test/.../SoftAuthenticator.kt`), but it has not yet been tested on a phone with a real YubiKey.
 

@@ -20,6 +20,16 @@
     <!-- Passkey provider: checks a site's Digital Asset Links before an app may use its passkeys,
          and refreshes Google's list of trusted browsers. No other network use. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required by Chrome to read (only) whether "Autofill using another service" is on.
+         YK Manager does not read the user dictionary. -->
+    <uses-permission android:name="android.permission.READ_USER_DICTIONARY" />
+
+    <queries>
+        <package android:name="com.android.chrome" />
+        <package android:name="com.chrome.beta" />
+        <package android:name="com.chrome.dev" />
+        <package android:name="com.chrome.canary" />
+    </queries>
 
     <application
         android:allowBackup="false"

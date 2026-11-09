@@ -87,6 +87,15 @@ class PasskeyActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT < 34) { finish(); return }
+        if (intent.action == ACTION_SELF_TEST) {
+            // Picked from the test sheet: report success back to YK Manager and close.
+            val result = Intent()
+            PendingIntentHandler.setGetCredentialException(
+                result, androidx.credentials.exceptions.GetCredentialCancellationException(PASSKEY_SELF_TEST_OK))
+            setResult(Activity.RESULT_OK, result)
+            finish()
+            return
+        }
         PasskeyPromptState.active = true
 
         val isCreate = intent.action == ACTION_CREATE
@@ -181,6 +190,7 @@ class PasskeyActivity : ComponentActivity() {
     companion object {
         const val ACTION_CREATE = "net.skorchin.ykmanager.passkey.CREATE"
         const val ACTION_GET = "net.skorchin.ykmanager.passkey.GET"
+        const val ACTION_SELF_TEST = "net.skorchin.ykmanager.passkey.SELF_TEST"
         const val EXTRA_CREDENTIAL_ID = "credential_id"
     }
 }
