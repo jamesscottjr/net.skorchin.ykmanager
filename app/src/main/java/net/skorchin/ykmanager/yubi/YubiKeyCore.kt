@@ -258,7 +258,7 @@ class YubiKeyCore(app: Application) {
     /**
      * Refresh after an NFC interaction. If the key can no longer be reached
      * (lifted off, or still busy after a write) the action itself has already
-     * been reported, so instead of a failure the user is asked to tap again.
+     * been reported, so instead of a failure a short note asks for another tap.
      */
     private suspend fun refreshAfterNfc(device: NfcYubiKeyDevice, afterAction: Boolean) {
         val ok = try {
@@ -268,10 +268,16 @@ class YubiKeyCore(app: Application) {
             false
         }
         if (!ok) {
+            // No blocking "Scan your YubiKey" dialog here: the action (if any) has
+            // already run and been reported, and the next tap refreshes the screen
+            // anyway. Just leave a short, dismissable note.
             nfcDevice = null
-            pending = "read the YubiKey" to { _ -> }
-            _tapPrompt.value = if (afterAction) "Done. Lift your YubiKey and tap it again to refresh what is shown."
-                else "The YubiKey moved away before it could be read. Tap it again."
+            pending = null
+            if (afterAction) {
+                if (_message.value == null) toast("Done. Tap your YubiKey again any time to refresh what is shown.")
+            } else {
+                toast("The YubiKey moved away before it could be read. Tap it again to refresh.")
+            }
         }
     }
 
