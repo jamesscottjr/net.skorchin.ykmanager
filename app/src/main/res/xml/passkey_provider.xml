@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android only asks a provider about requests whose type matches one of these
+  capabilities. Passkey requests made through androidx.credentials (Chrome,
+  apps) are typed "androidx.credentials.TYPE_PUBLIC_KEY_CREDENTIAL"; with only
+  the "android." spelling, YK Manager was enabled but never asked.
+  The "android." spelling is kept as well, for callers that use it.
+-->
 <credential-provider xmlns:android="http://schemas.android.com/apk/res/android">
     <capabilities>
+        <capability name="androidx.credentials.TYPE_PUBLIC_KEY_CREDENTIAL" />
         <capability name="android.credentials.TYPE_PUBLIC_KEY_CREDENTIAL" />
     </capabilities>
 </credential-provider>

@@ -67,6 +67,8 @@ What it handles:
 
 Sign-in responses follow what Android expects from a passkey provider: `authenticatorAttachment` is reported as `platform` (as Google Password Manager, Bitwarden and KeePassDX do), `clientExtensionResults` is always present, and for browser requests the app rebuilds the browser's exact `clientDataJSON` and returns it when its hash matches the one that was signed (otherwise a placeholder the browser replaces).
 
+v2.19 fix: the provider declared its passkey capability as `android.credentials.TYPE_PUBLIC_KEY_CREDENTIAL`, but requests made through androidx.credentials (Chrome and apps) are typed `androidx.credentials.TYPE_PUBLIC_KEY_CREDENTIAL`. Android only asks providers whose capabilities match, so YK Manager was never asked, even as the default passkey service. Both spellings are now declared (`ProviderCapabilityTest` guards this). After updating, switch YK Manager off and on in Settings > Passwords, passkeys & accounts so Android re-reads it.
+
 If YK Manager never appears in the sign-in sheet (v2.17):
 
 - The Passkeys card shows whether YK Manager is on as a provider, and whether each installed Chrome channel has **Autofill using another service** on (read from Chrome's `AutofillThirdPartyModeContentProvider`; this is why the app declares `READ_USER_DICTIONARY`, which Chrome requires to read that one setting). A button opens Chrome's setting directly. Clearing Chrome's data resets it.
