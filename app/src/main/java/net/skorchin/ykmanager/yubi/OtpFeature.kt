@@ -498,12 +498,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
 
     companion object {
         private const val NDEF_DATA_SIZE = 54
-        private val NDEF_URL_PREFIXES = arrayOf(
-            "http://www.", "https://www.", "http://", "https://", "tel:", "mailto:", "ftp://anonymous:anonymous@",
-            "ftp://ftp.", "ftps://", "sftp://", "smb://", "nfs://", "ftp://", "dav://", "news:", "telnet://", "imap:",
-            "rtsp://", "urn:", "pop:", "sip:", "sips:", "tftp:", "btspp://", "btl2cap://", "btgoep://", "tcpobex://",
-            "irdaobex://", "file://", "urn:epc:id:", "urn:epc:tag:", "urn:epc:pat:", "urn:epc:raw:", "urn:epc:", "urn:nfc:",
-        )
+        private val NDEF_URL_PREFIXES get() = NdefReader.URL_PREFIXES
         private const val MODHEX = "cbdefghijklnrtuv"
 
         fun classifyOutput(raw: String, serial: Int?): Identification? {

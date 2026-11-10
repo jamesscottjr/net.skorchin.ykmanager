@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
@@ -94,6 +95,7 @@ private fun Screen.icon(): ImageVector = when (this) {
     Screen.RESET -> Icons.Filled.RestartAlt
     Screen.RECIPES -> Icons.Filled.PlaylistAddCheck
     Screen.FINGERPRINTS -> Icons.Filled.Fingerprint
+    Screen.SETTINGS -> Icons.Filled.Settings
     Screen.ABOUT -> Icons.Filled.Info
 }
 
@@ -163,7 +165,7 @@ fun AppRoot(vm: AppViewModel) {
                     HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
                     Screen.values().filter { it.availableFor(keyInfo) }.forEach { s ->
-                        if (s == Screen.APPLICATIONS || s == Screen.ABOUT) {
+                        if (s == Screen.APPLICATIONS || s == Screen.SETTINGS) {
                             HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         }
                         NavigationDrawerItem(
@@ -222,6 +224,7 @@ fun AppRoot(vm: AppViewModel) {
                     Screen.RESET -> ResetScreen(vm)
                     Screen.RECIPES -> RecipesScreen(vm)
                     Screen.FINGERPRINTS -> FingerprintsScreen(vm)
+                    Screen.SETTINGS -> SettingsScreen(vm)
                     Screen.ABOUT -> LegalScreen()
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))

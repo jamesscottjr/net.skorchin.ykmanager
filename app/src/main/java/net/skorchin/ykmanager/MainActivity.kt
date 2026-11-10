@@ -1,6 +1,7 @@
 package net.skorchin.ykmanager
 
 import android.content.Intent
+import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
@@ -47,8 +48,10 @@ class MainActivity : ComponentActivity() {
         if (action != NfcAdapter.ACTION_NDEF_DISCOVERED && action != NfcAdapter.ACTION_TECH_DISCOVERED &&
             action != NfcAdapter.ACTION_TAG_DISCOVERED) return
         val tag = IntentCompat.getParcelableExtra(intent, NfcAdapter.EXTRA_TAG, Tag::class.java) ?: return
+        val ndef = IntentCompat.getParcelableArrayExtra(intent, NfcAdapter.EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
+            ?.firstOrNull()?.let { (it as? NdefMessage)?.toByteArray() }
         intent.action = null // handle once
-        vm.core.onNfcIntentTag(tag)
+        vm.core.onNfcIntentTag(tag, ndef)
     }
 
     override fun onResume() {

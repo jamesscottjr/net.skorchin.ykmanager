@@ -1,6 +1,12 @@
 package net.skorchin.ykmanager.yubi
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import com.yubico.yubikit.android.transport.nfc.NfcYubiKeyDevice
 import com.yubico.yubikit.management.Capability
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +27,7 @@ enum class Screen(val title: String, val capability: Capability? = null) {
     APPLICATIONS("Applications"),
     RECIPES("Recipes"),
     RESET("Factory reset"),
+    SETTINGS("Settings"),
     ABOUT("About & legal");
 
     /** Whether this screen makes sense for the connected key (unknown key: show everything). */
@@ -42,6 +49,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val pgp = OpenPgpFeature(core)
     val mgmt = ManagementFeature(core)
     val recipes = RecipeFeature(core, otp, mgmt, app)
+    val settings = AppSettings(app)
 
     private val _screen = MutableStateFlow(Screen.HOME)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -61,6 +69,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         core.onKeyChanged = {
             oath.clear(); piv.clear(); fido.clear(); pgp.clear()
         }
+        core.idleTapHandler = { device, intentNdef -> handleIdleTap(device, intentNdef) }
         viewModelScope.launch {
             core.keyInfo.collect { info ->
                 otp.rebuild()
@@ -81,6 +90,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /** The configurable behaviour for a tap that nothing was waiting for. */
+    private suspend fun handleIdleTap(device: NfcYubiKeyDevice, intentNdef: ByteArray?): Boolean {
+        val app = getApplication<Application>()
+        return when (settings.nfcTapAction.value) {
+            NfcTapAction.REFRESH -> false
+            NfcTapAction.NOTHING -> true
+            NfcTapAction.ACCOUNTS -> { _screen.value = Screen.ACCOUNTS; false }
+            NfcTapAction.COPY_OTP, NfcTapAction.SHOW_OTP, NfcTapAction.OPEN_LINK -> {
+                val content = intentNdef?.let { runCatching { NdefReader.parse(it) }.getOrNull() }
+                    ?: core.smartCard(device) { NdefReader.read(it) }
+                when (settings.nfcTapAction.value) {
+                    NfcTapAction.COPY_OTP -> {
+                        copy(app, content.otp)
+                        core.toast("One-time password copied to the clipboard")
+                    }
+                    NfcTapAction.OPEN_LINK -> {
+                        if (!content.isUri) throw UserFacingException("The NDEF record is text, not a link: ${content.value}")
+                        app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(content.value)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                    else -> {
+                        if (settings.copyOnShow.value) copy(app, content.otp)
+                        core.showDialog(InfoDialog(
+                            "One-time password",
+                            content.otp + (if (content.otp != content.value) "\n\n${if (content.isUri) "Link" else "Text"}: ${content.value}" else "") +
+                                (if (settings.copyOnShow.value) "\n\n(copied to the clipboard)" else ""),
+                            content.otp,
+                        ))
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    private fun copy(ctx: Context, value: String) {
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("One-time password", value))
     }
 
     fun navigate(s: Screen) {

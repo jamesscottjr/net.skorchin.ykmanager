@@ -227,8 +227,8 @@ class YubiKeyCore(app: Application) {
     }
 
     /** A tag delivered through an NFC intent rather than reader mode; treat it like a tap. */
-    fun onNfcIntentTag(tag: android.nfc.Tag) {
-        onNfcTap(NfcYubiKeyDevice(tag, 30_000, intentTagExecutor))
+    fun onNfcIntentTag(tag: android.nfc.Tag, ndefMessage: ByteArray?) {
+        onNfcTap(NfcYubiKeyDevice(tag, 30_000, intentTagExecutor), ndefMessage)
     }
 
     private val intentTagExecutor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -242,15 +242,30 @@ class YubiKeyCore(app: Application) {
         if (usbStarted) yubiKit.stopUsbDiscovery()
     }
 
-    private fun onNfcTap(device: NfcYubiKeyDevice) {
+    /**
+     * Handles a tap that arrived while nothing was waiting for the key (the
+     * user's configurable "NFC tap" behaviour). Receives the NDEF message if
+     * the tap came in through an NDEF intent. Returns true when it fully
+     * handled the tap and no screen refresh should follow.
+     */
+    var idleTapHandler: (suspend (NfcYubiKeyDevice, ByteArray?) -> Boolean)? = null
+
+    private fun onNfcTap(device: NfcYubiKeyDevice, intentNdef: ByteArray? = null) {
         if (usbDevice != null) return // prefer the USB key while one is attached
         nfcDevice = device
         val action = pending
         pending = null
         _tapPrompt.value = null
         launchJob(device) {
-            if (action != null) runGuarded(action.first) { action.second(device) }
-            refreshAfterNfc(device, action != null)
+            if (action != null) {
+                runGuarded(action.first) { action.second(device) }
+                refreshAfterNfc(device, afterAction = true)
+            } else {
+                val handler = idleTapHandler
+                var handled = false
+                if (handler != null) runGuarded("handle the tap") { handled = handler(device, intentNdef) }
+                if (!handled) refreshAfterNfc(device, afterAction = false)
+            }
             _link.value = Link.NFC
         }
     }
