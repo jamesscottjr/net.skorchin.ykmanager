@@ -17,7 +17,7 @@ jobs:
   # Software composition analysis against the OSV database, using the locked
   # release runtime classpath (app/gradle.lockfile).
   sca:
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1"
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0"
     with:
       scan-args: |-
         --lockfile=app/gradle.lockfile
