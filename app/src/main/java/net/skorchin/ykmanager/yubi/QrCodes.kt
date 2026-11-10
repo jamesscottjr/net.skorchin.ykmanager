@@ -27,7 +27,7 @@ object QrCodes {
      */
     fun decodeImage(context: Context, uri: Uri): String? {
         val bitmap = loadBitmap(context, uri, 2000) ?: return null
-        val attempts = listOfNotNull(bitmap, scaled(bitmap, 800))
+        val attempts = listOfNotNull(bitmap, scaled(bitmap, 1000), scaled(bitmap, 600))
         for (bmp in attempts) {
             val w = bmp.width
             val h = bmp.height
@@ -52,15 +52,21 @@ object QrCodes {
     }
 
     private fun loadBitmap(context: Context, uri: Uri, maxSide: Int): Bitmap? {
+        // Pass 1: read only the dimensions (decodeStream returns null by design here).
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+        val probe = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalArgumentException("The image could not be opened")
+        probe.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("That file is not a readable image")
+        // Pass 2: decode, down-sampling very large images.
         var sample = 1
         while (bounds.outWidth / sample > maxSide * 2 || bounds.outHeight / sample > maxSide * 2) sample *= 2
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val bmp = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
+        val bmp = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+            ?: throw IllegalArgumentException("The image could not be decoded")
         return if (bmp.config == Bitmap.Config.ARGB_8888) bmp else bmp.copy(Bitmap.Config.ARGB_8888, false)
     }
 

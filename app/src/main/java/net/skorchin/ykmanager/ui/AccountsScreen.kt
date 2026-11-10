@@ -88,7 +88,12 @@ fun AccountsScreen(vm: AppViewModel) {
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val text = runCatching { QrCodes.decodeImage(context, uri) }.getOrNull()
+        val text = try {
+            QrCodes.decodeImage(context, uri)
+        } catch (e: Exception) {
+            vm.core.error("Could not read the image: ${e.message ?: e.javaClass.simpleName}")
+            return@rememberLauncherForActivityResult
+        }
         if (text == null) vm.core.error("No QR code could be found in that image. Try a sharper or larger picture.")
         else handleScanned(text)
     }
