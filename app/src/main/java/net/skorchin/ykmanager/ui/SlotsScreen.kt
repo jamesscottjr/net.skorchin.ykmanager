@@ -14,9 +14,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,8 +79,11 @@ fun SlotsScreen(vm: AppViewModel) {
             ButtonRow {
                 SmallButton("Swap slots") { action = SlotAction.Swap }
                 SmallButton("NFC (NDEF) output") { action = SlotAction.Ndef }
+                SmallButton("Show NFC output") { vm.otp.showNdefOutput() }
             }
         }
+
+        NfcHandlingCard(vm)
 
         SectionCard {
             SectionTitle("About reading slot configuration")
@@ -316,3 +322,41 @@ private fun ProgramDialog(vm: AppViewModel, slot: Slot, kind: Prog, overwriting:
 
 @Suppress("unused")
 private val spacer = Modifier.width(1.dp)
+
+/**
+ * Lets the user hand NFC taps to Android while on this screen, to test what the
+ * phone does with the key's NDEF record. Everywhere else the app always keeps
+ * reader mode, so a tap never leaves YK Manager.
+ */
+@Composable
+private fun NfcHandlingCard(vm: AppViewModel) {
+    val nfc by vm.core.nfcAvailable.collectAsStateWithLifecycle()
+    if (nfc != true) return
+    val activity = LocalContext.current.findActivity() ?: return
+    val systemHandles by vm.core.systemHandlesNfc.collectAsStateWithLifecycle()
+    // Leaving this screen always gives taps back to the app.
+    DisposableEffect(Unit) { onDispose { if (vm.core.systemHandlesNfc.value) vm.core.setSystemHandlesNfc(activity, false) } }
+    SectionCard {
+        SectionTitle("NFC taps while on this screen")
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = systemHandles, onCheckedChange = { vm.core.setSystemHandlesNfc(activity, it) })
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (systemHandles) "Let the phone handle the tag (opens the NDEF link or text in another app) - for testing the NDEF output."
+                else "YK Manager handles taps (default). Turn on to see what the phone itself does with the NDEF tag.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (!systemHandles) {
+            Spacer(Modifier.height(4.dp))
+            Hint("Use \"Show NFC output\" above to read the NDEF record in the app without leaving it.")
+        }
+    }
+}
+
+private tailrec fun android.content.Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}

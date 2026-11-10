@@ -61,8 +61,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        // Re-arm reader mode after dialogs, permission prompts or app switches.
-        if (hasFocus) vm.core.startNfcDiscovery(this)
+        // Make sure reader mode is held whenever the app is in front, but never restart it
+        // while it is already active: restarting re-polls the field and a key still on the
+        // phone would be read by the system (and its NDEF link opened) in the gap.
+        if (hasFocus) vm.core.ensureNfcDiscovery(this)
     }
 
     override fun onPause() {

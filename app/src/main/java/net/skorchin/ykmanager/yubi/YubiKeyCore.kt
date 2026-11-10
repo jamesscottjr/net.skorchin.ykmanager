@@ -214,14 +214,42 @@ class YubiKeyCore(app: Application) {
         }
     }
 
+    /** True while this activity holds NFC reader mode (taps come to the app, not to the system). */
+    @Volatile private var nfcArmed = false
+
+    /**
+     * When true, the app deliberately releases NFC reader mode so Android handles
+     * the YubiKey's NDEF tag itself (browser, Yubico Authenticator, ...). Only
+     * offered on the OTP slots screen, to test the NDEF output; off everywhere else.
+     */
+    private val _systemHandlesNfc = MutableStateFlow(false)
+    val systemHandlesNfc: StateFlow<Boolean> = _systemHandlesNfc.asStateFlow()
+
+    fun setSystemHandlesNfc(activity: Activity, on: Boolean) {
+        _systemHandlesNfc.value = on
+        if (on) stopNfcDiscovery(activity) else startNfcDiscovery(activity)
+    }
+
+    /**
+     * Re-arm reader mode only when it is not already held. Tearing it down and
+     * re-enabling while a key is still on the phone restarts NFC discovery, and
+     * in that gap the system can read the tag itself and open the NDEF link.
+     */
+    fun ensureNfcDiscovery(activity: Activity) {
+        if (!nfcArmed) startNfcDiscovery(activity)
+    }
+
     fun startNfcDiscovery(activity: Activity) {
+        if (_systemHandlesNfc.value) return
         try {
             // skipNdefCheck: don't let Android read the NDEF record on every tap. It is slower,
             // makes the key emit an OTP for nothing, and is a path by which the system may act
             // on the record itself instead of handing the tag to this app.
             yubiKit.startNfcDiscovery(NfcConfiguration().timeout(30_000).skipNdefCheck(true), activity) { onNfcTap(it) }
+            nfcArmed = true
             _nfcAvailable.value = true
         } catch (e: NfcNotAvailable) {
+            nfcArmed = false
             _nfcAvailable.value = false
         }
     }
@@ -234,7 +262,8 @@ class YubiKeyCore(app: Application) {
     private val intentTagExecutor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun stopNfcDiscovery(activity: Activity) {
-        yubiKit.stopNfcDiscovery(activity)
+        nfcArmed = false
+        runCatching { yubiKit.stopNfcDiscovery(activity) }
     }
 
     fun close() {

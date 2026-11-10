@@ -208,6 +208,29 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
         }
     }
 
+    /** Read the NDEF record the key emits to phones and show it, without leaving the app. */
+    fun showNdefOutput() {
+        core.run("read the NFC (NDEF) output", refresh = false) { device ->
+            val content = try {
+                core.smartCard(device) { NdefReader.read(it) }
+            } catch (e: Exception) {
+                if (e is UserFacingException) throw e
+                throw UserFacingException(
+                    "Could not read the NDEF record: ${e.message}. Reading it works over NFC; over USB the key may not expose the tag.")
+            }
+            val isStatic = content.staticPassword != null
+            val body = buildString {
+                append(if (content.isUri) "Link: " else "Text: ").append(content.value)
+                append("\n\nSlot output: ").append(content.otp)
+                if (isStatic) append("\n\nThe slot holds a static password. Over NFC the key sends raw keyboard scan codes; they were translated with the US keyboard layout.")
+                else if (content.otp.length in 32..48 && content.otp.all { it in "cbdefghijklnrtuv" }) append("\n\nThis is a Yubico OTP (ModHex).")
+                else if (content.otp.length in 6..8 && content.otp.all { it.isDigit() }) append("\n\nThis is an OATH-HOTP code.")
+                append("\n\nEach read makes the key generate a new value.")
+            }
+            core.showDialog(InfoDialog("NFC (NDEF) output", body, content.otp))
+        }
+    }
+
     /** For non-touch slots: send a challenge to see if the slot answers HMAC-SHA1. */
     fun probeChallengeResponse(slot: Slot) {
         core.run("test slot ${slot.num}") { device ->
