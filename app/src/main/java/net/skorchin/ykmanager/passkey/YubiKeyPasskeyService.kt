@@ -150,7 +150,9 @@ class YubiKeyPasskeyService : CredentialProviderService() {
         val intent = Intent(this, PasskeyActivity::class.java)
             .setAction(PasskeyActivity.ACTION_SELF_TEST)
             .setData(Uri.parse("ykmanager-passkey://selftest/$code"))
-        return PendingIntent.getActivity(this, code, intent,
+        // Credential Manager fills the request extras into this intent, so it must be mutable;
+        // it is explicit (our own activity) and unique per entry, which is Android's documented pattern.
+        return PendingIntent.getActivity(this, code, intent, // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_pending_intent_not_immutable
             PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -163,7 +165,8 @@ class YubiKeyPasskeyService : CredentialProviderService() {
             // A unique data URI keeps entries from sharing one PendingIntent.
             .setData(Uri.parse("ykmanager-passkey://entry/$code"))
             .putExtra(PasskeyActivity.EXTRA_CREDENTIAL_ID, credentialId)
-        return PendingIntent.getActivity(
+        // Mutable by requirement: Credential Manager adds the provider request to the intent. Explicit target.
+        return PendingIntent.getActivity( // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_pending_intent_not_immutable
             this, code, intent,
             PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )

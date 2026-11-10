@@ -80,8 +80,17 @@ import kotlinx.coroutines.launch
 
 fun copyToClipboard(context: Context, label: String, value: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText(label, value))
+    cm.setPrimaryClip(sensitiveClip(label, value))
     Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+}
+
+/** A clip flagged as sensitive so Android 13+ hides it in the clipboard preview. */
+fun sensitiveClip(label: String, value: String): ClipData = ClipData.newPlainText(label, value).apply {
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        description.extras = android.os.PersistableBundle().apply {
+            putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+        }
+    }
 }
 
 private fun Screen.icon(): ImageVector = when (this) {

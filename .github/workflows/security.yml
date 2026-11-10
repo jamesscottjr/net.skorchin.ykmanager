@@ -1,0 +1,51 @@
+name: Security scans
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "30 12 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # Software composition analysis against the OSV database, using the locked
+  # release runtime classpath (app/gradle.lockfile).
+  sca:
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1"
+    with:
+      scan-args: |-
+        --lockfile=app/gradle.lockfile
+
+  # Static analysis of the Kotlin sources (security rules, secrets).
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install semgrep
+      - run: semgrep scan --config p/kotlin --config p/secrets --config p/mobsfscan --metrics=off --error --severity WARNING --severity ERROR app/src/main
+
+  # Android Lint with the project's lint configuration (includes security checks).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :app:lintRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-release.*

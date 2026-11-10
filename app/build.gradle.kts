@@ -14,8 +14,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 28
-        versionName = "2.26"
+        versionCode = 29
+        versionName = "2.27"
     }
 
     signingConfigs {
@@ -68,6 +68,13 @@ android {
     }
 }
 
+// Lock the release runtime classpath so software-composition analysis (OSV-Scanner,
+// Dependabot) sees exactly what ships. Refresh with:
+//   ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --write-locks
+configurations.matching { it.name == "releaseRuntimeClasspath" }.configureEach {
+    resolutionStrategy.activateDependencyLocking()
+}
+
 dependencies {
     // Yubico Android SDK (YubiKit)
     val yubikit = "3.1.0"
@@ -84,8 +91,8 @@ dependencies {
     implementation("androidx.credentials:credentials:1.6.0")
 
     // X.509 certificate / CSR generation and PKCS#12 / PEM import for PIV
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
 
     // QR code scanning for adding OATH accounts
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

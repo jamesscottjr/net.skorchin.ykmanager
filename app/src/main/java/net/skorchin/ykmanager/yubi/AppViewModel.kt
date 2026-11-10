@@ -109,7 +109,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     NfcTapAction.OPEN_LINK -> {
                         if (!content.isUri) throw UserFacingException("The NDEF record is text, not a link: ${content.value}")
-                        app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(content.value)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        val uri = Uri.parse(content.value)
+                        // Only web links: a tag could otherwise carry intent:, file: or other schemes.
+                        if (uri.scheme?.lowercase() !in setOf("http", "https"))
+                            throw UserFacingException("Only http(s) links are opened. The record is: ${content.value}")
+                        app.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                     else -> {
                         if (settings.copyOnShow.value) copy(app, content.otp)
@@ -130,7 +134,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun copy(ctx: Context, value: String) {
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("One-time password", value))
+        cm.setPrimaryClip(net.skorchin.ykmanager.ui.sensitiveClip("One-time password", value))
     }
 
     fun navigate(s: Screen) {

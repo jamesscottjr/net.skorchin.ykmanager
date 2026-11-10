@@ -75,8 +75,10 @@ class OathFeature(private val core: YubiKeyCore, context: android.content.Contex
         if (persist) store.put(deviceId, key) else store.remove(deviceId)
     }
 
+    // HMAC-SHA1 is mandated by the YubiKey OATH protocol for the access-key challenge
+    // (YKOATH VALIDATE); it is not a choice this app can make.
     private fun accessKey(key: ByteArray) = AccessKey { challenge ->
-        Mac.getInstance("HmacSHA1").run {
+        Mac.getInstance("HmacSHA1").run { // nosemgrep: mobsf.mobsfscan.kotlin.crypto.android_kotlin_sha1
             init(SecretKeySpec(key, "HmacSHA1"))
             doFinal(challenge)
         }

@@ -29,7 +29,8 @@ class AccessKeyStore(context: Context) {
             cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
             cipher.doFinal(blob, IV_LEN, blob.size - IV_LEN)
         }.getOrElse {
-            Log.w(TAG, "Dropping unreadable remembered key for $deviceId", it)
+            // Logs the OATH device ID (a public identifier) and the exception, never key material.
+            Log.w(TAG, "Dropping unreadable remembered key for $deviceId", it) // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_logging
             remove(deviceId)
             null
         }
@@ -41,7 +42,7 @@ class AccessKeyStore(context: Context) {
             cipher.init(Cipher.ENCRYPT_MODE, secretKey())
             val blob = cipher.iv + cipher.doFinal(key)
             prefs.edit().putString(deviceId, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
-        }.onFailure { Log.w(TAG, "Could not remember the OATH password", it) }
+        }.onFailure { Log.w(TAG, "Could not remember the OATH password", it) } // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_logging
     }
 
     fun contains(deviceId: String) = prefs.contains(deviceId)
