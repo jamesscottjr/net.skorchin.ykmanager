@@ -27,6 +27,8 @@ data class OathState(
     val deviceId: String? = null,
     val hasPassword: Boolean = false,
     val locked: Boolean = false,
+    /** True when the password is remembered on this phone for this key. */
+    val remembered: Boolean = false,
     val entries: List<OathEntry> = emptyList(),
     val readAt: Long = 0,
 )
@@ -43,17 +45,34 @@ data class NewAccount(
     val requireTouch: Boolean,
 )
 
-class OathFeature(private val core: YubiKeyCore) {
+class OathFeature(private val core: YubiKeyCore, context: android.content.Context) {
 
     private val _state = MutableStateFlow(OathState())
     val state: StateFlow<OathState> = _state.asStateFlow()
 
-    /** Derived access keys remembered for this app session, keyed by device ID. */
+    /** Derived access keys for this app session, keyed by device ID. Survives key removal. */
     private val accessKeys = mutableMapOf<String, ByteArray>()
 
+    /** Keys the user asked to remember on this phone (encrypted, persistent). */
+    private val store = AccessKeyStore(context)
+
+    /** Called when the key is removed or another key appears: drop the shown state only. */
     fun clear() {
         _state.value = OathState()
-        accessKeys.clear()
+    }
+
+    /** The access key known for a device: this session's first, then the remembered one. */
+    private fun knownKey(deviceId: String): ByteArray? =
+        accessKeys[deviceId] ?: store.get(deviceId)?.also { accessKeys[deviceId] = it }
+
+    private fun forgetKey(deviceId: String) {
+        accessKeys.remove(deviceId)
+        store.remove(deviceId)
+    }
+
+    private fun rememberKey(deviceId: String, key: ByteArray, persist: Boolean) {
+        accessKeys[deviceId] = key
+        if (persist) store.put(deviceId, key) else store.remove(deviceId)
     }
 
     private fun accessKey(key: ByteArray) = AccessKey { challenge ->
@@ -71,9 +90,9 @@ class OathFeature(private val core: YubiKeyCore) {
     ): T = core.smartCard(device) { conn ->
         val s = OathSession(conn)
         if (s.isLocked) {
-            val k = accessKeys[s.deviceId]
+            val k = knownKey(s.deviceId)
             if (k == null || !s.unlock(accessKey(k))) {
-                accessKeys.remove(s.deviceId)
+                if (k != null) forgetKey(s.deviceId) // the password changed elsewhere
                 if (requireUnlocked) throw UserFacingException("The OATH application is password protected. Unlock it first.")
             }
         }
@@ -85,7 +104,7 @@ class OathFeature(private val core: YubiKeyCore) {
             val s = OathSession(conn)
             var locked = s.isLocked
             if (locked) {
-                accessKeys[s.deviceId]?.let { k -> if (s.unlock(accessKey(k))) locked = false }
+                knownKey(s.deviceId)?.let { k -> if (s.unlock(accessKey(k))) locked = false else forgetKey(s.deviceId) }
             }
             val entries = if (locked) emptyList() else s.calculateCodes()
                 .map { (cred, code) -> OathEntry(cred, code) }
@@ -97,6 +116,7 @@ class OathFeature(private val core: YubiKeyCore) {
                 deviceId = s.deviceId,
                 hasPassword = s.isAccessKeySet,
                 locked = locked,
+                remembered = store.contains(s.deviceId),
                 entries = entries,
                 readAt = System.currentTimeMillis(),
             )
@@ -109,9 +129,9 @@ class OathFeature(private val core: YubiKeyCore) {
                 val s = OathSession(conn)
                 val key = s.deriveAccessKey(password)
                 if (!s.unlock(accessKey(key))) throw UserFacingException("Wrong password")
-                accessKeys[s.deviceId] = key
+                rememberKey(s.deviceId, key, remember)
             }
-            if (!remember) core.toast("Unlocked")
+            core.toast(if (remember) "Unlocked and remembered on this phone" else "Unlocked")
         }
     }
 
@@ -187,12 +207,13 @@ class OathFeature(private val core: YubiKeyCore) {
                 val s = OathSession(conn)
                 if (s.isLocked) {
                     val ok = current?.let { s.unlock(accessKey(s.deriveAccessKey(it))) }
-                        ?: accessKeys[s.deviceId]?.let { s.unlock(accessKey(it)) } ?: false
+                        ?: knownKey(s.deviceId)?.let { s.unlock(accessKey(it)) } ?: false
                     if (!ok) throw UserFacingException("Current password is wrong")
                 }
                 val key = s.deriveAccessKey(new)
                 s.setAccessKey(key)
-                accessKeys[s.deviceId] = key
+                // Keep it remembered if the old one was.
+                rememberKey(s.deviceId, key, persist = store.contains(s.deviceId))
             }
             core.toast("Password set")
         }
@@ -206,21 +227,21 @@ class OathFeature(private val core: YubiKeyCore) {
                     throw UserFacingException("Wrong password")
                 }
                 s.deleteAccessKey()
-                accessKeys.remove(s.deviceId)
+                forgetKey(s.deviceId)
             }
             core.toast("Password removed")
         }
     }
 
     fun forgetPassword() {
-        _state.value.deviceId?.let { accessKeys.remove(it) }
-        _state.value = _state.value.copy(locked = _state.value.hasPassword, entries = emptyList())
+        _state.value.deviceId?.let { forgetKey(it) }
+        _state.value = _state.value.copy(locked = _state.value.hasPassword, remembered = false, entries = emptyList())
+        core.toast("Password forgotten on this phone")
     }
 
     fun reset() {
         core.run("reset the OATH application") { device ->
-            core.smartCard(device) { conn -> OathSession(conn).reset() }
-            accessKeys.clear()
+            core.smartCard(device) { conn -> val s = OathSession(conn); forgetKey(s.deviceId); s.reset() }
             core.toast("OATH application reset. All accounts were deleted.")
         }
     }

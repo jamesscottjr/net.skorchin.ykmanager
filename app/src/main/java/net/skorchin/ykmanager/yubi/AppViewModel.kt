@@ -43,7 +43,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val core = YubiKeyCore(app)
     val otp = OtpFeature(core, app)
-    val oath = OathFeature(core)
+    val oath = OathFeature(core, app)
     val piv = PivFeature(core)
     val fido = FidoFeature(core)
     val pgp = OpenPgpFeature(core)

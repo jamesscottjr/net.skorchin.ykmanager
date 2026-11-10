@@ -159,14 +159,14 @@ fun AccountsScreen(vm: AppViewModel) {
             Spacer(Modifier.height(4.dp))
             st.version?.let { InfoRow("Version", it.toString()) }
             InfoRow("Accounts", if (st.locked) "locked" else st.entries.size.toString())
-            InfoRow("Password", if (st.hasPassword) "set" else "not set")
+            InfoRow("Password", if (!st.hasPassword) "not set" else if (st.remembered) "set, remembered on this phone" else if (!st.locked) "set, unlocked for this session" else "set")
             Spacer(Modifier.height(8.dp))
             ButtonRow {
                 if (!st.hasPassword) SmallButton("Set password") { dialog = AccDialog.SET_PW }
                 else {
                     SmallButton("Change password") { dialog = AccDialog.CHANGE_PW }
                     SmallButton("Remove password") { dialog = AccDialog.REMOVE_PW }
-                    SmallButton("Forget remembered") { vm.oath.forgetPassword() }
+                    if (st.remembered || !st.locked) SmallButton("Forget password") { vm.oath.forgetPassword() }
                 }
             }
         }
