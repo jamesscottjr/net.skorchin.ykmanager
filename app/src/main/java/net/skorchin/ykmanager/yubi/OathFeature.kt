@@ -148,6 +148,25 @@ class OathFeature(private val core: YubiKeyCore) {
         }
     }
 
+    /** Add several accounts (for example from a Google Authenticator export) in one go. */
+    fun addMany(uris: List<String>, requireTouch: Boolean) {
+        core.run("add the accounts") { device ->
+            val parsed = uris.map { uri ->
+                runCatching { CredentialData.parseUri(URI(uri.trim())) }
+                    .getOrElse { throw UserFacingException("Not a valid otpauth:// link: ${it.message}") }
+            }
+            val failed = mutableListOf<String>()
+            withOath(device) { s ->
+                for (d in parsed) {
+                    runCatching { s.putCredential(d, requireTouch) }
+                        .onFailure { failed += "${d.issuer?.let { "$it: " } ?: ""}${d.accountName} (${it.message})" }
+                }
+            }
+            if (failed.isEmpty()) core.toast("Added ${parsed.size} accounts")
+            else throw UserFacingException("Added ${parsed.size - failed.size} of ${parsed.size} accounts. Failed: ${failed.joinToString("; ")}")
+        }
+    }
+
     fun rename(entry: OathEntry, issuer: String, name: String) {
         core.run("rename the account") { device ->
             withOath(device) { it.renameCredential(entry.credential, name, issuer.ifBlank { null }) }

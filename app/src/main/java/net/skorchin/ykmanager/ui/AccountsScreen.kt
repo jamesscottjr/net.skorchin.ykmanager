@@ -41,13 +41,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.skorchin.ykmanager.yubi.AppViewModel
 import net.skorchin.ykmanager.yubi.NewAccount
 import net.skorchin.ykmanager.yubi.OathEntry
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.journeyapps.barcodescanner.ScanContract
+import net.skorchin.ykmanager.yubi.QrCodes
 import com.journeyapps.barcodescanner.ScanOptions
 import com.yubico.yubikit.oath.HashAlgorithm
 import com.yubico.yubikit.oath.OathType
 import kotlinx.coroutines.delay
 
-private enum class AccDialog { ADD, URI, SET_PW, CHANGE_PW, REMOVE_PW, UNLOCK }
+private enum class AccDialog { ADD, URI, IMPORT, SET_PW, CHANGE_PW, REMOVE_PW, UNLOCK }
 
 @Composable
 fun AccountsScreen(vm: AppViewModel) {
@@ -61,10 +67,47 @@ fun AccountsScreen(vm: AppViewModel) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(500) } }
 
-    val scanner = androidx.activity.compose.rememberLauncherForActivityResult(ScanContract()) { result ->
-        val text = result.contents ?: return@rememberLauncherForActivityResult
-        if (text.startsWith("otpauth://")) { scannedUri = text; dialog = AccDialog.URI }
-        else vm.core.error("That QR code is not an otpauth:// account")
+    var importUris by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    fun handleScanned(text: String?) {
+        if (text.isNullOrBlank()) return
+        val uris = runCatching { QrCodes.toOtpAuthUris(text) }
+            .getOrElse { vm.core.error("Could not read the export: ${it.message}"); return }
+        when {
+            uris.isEmpty() -> vm.core.error("That QR code is not an otpauth:// account: ${text.take(60)}")
+            uris.size == 1 -> { scannedUri = uris[0]; dialog = AccDialog.URI }
+            else -> { importUris = uris; dialog = AccDialog.IMPORT }
+        }
+    }
+
+    // Fallback camera scanner (ZXing) for phones without Google Play services.
+    val zxingScanner = androidx.activity.compose.rememberLauncherForActivityResult(ScanContract()) { result ->
+        handleScanned(result.contents)
+    }
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = runCatching { QrCodes.decodeImage(context, uri) }.getOrNull()
+        if (text == null) vm.core.error("No QR code could be found in that image. Try a sharper or larger picture.")
+        else handleScanned(text)
+    }
+
+    fun startCameraScan() {
+        // Google's code scanner (part of Play services) runs the camera with proper autofocus and
+        // needs no camera permission. ZXing's legacy-camera scanner is the fallback.
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        GmsBarcodeScanning.getClient(context, options).startScan()
+            .addOnSuccessListener { barcode -> handleScanned(barcode.rawValue) }
+            .addOnFailureListener {
+                zxingScanner.launch(
+                    ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                        .setPrompt("Scan the account's QR code").setBeepEnabled(false).setOrientationLocked(false)
+                )
+            }
     }
 
     ScreenColumn {
@@ -80,11 +123,9 @@ fun AccountsScreen(vm: AppViewModel) {
             }
         } else {
             ButtonRow {
-                SmallButton("Scan QR code") {
-                    scanner.launch(
-                        ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                            .setPrompt("Scan the account's QR code").setBeepEnabled(false).setOrientationLocked(false)
-                    )
+                SmallButton("Scan QR code") { startCameraScan() }
+                SmallButton("QR from image") {
+                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
                 SmallButton("Add manually") { dialog = AccDialog.ADD }
                 SmallButton("Paste URI") { scannedUri = ""; dialog = AccDialog.URI }
@@ -96,7 +137,7 @@ fun AccountsScreen(vm: AppViewModel) {
             val shown = st.entries
                 .filter { filter.isBlank() || "${it.issuer} ${it.name}".contains(filter, ignoreCase = true) }
                 .sortedBy { (it.issuer ?: it.name).lowercase() }
-            if (shown.isEmpty()) Hint("No accounts yet. Scan a QR code from a website's two-factor setup page to add one.")
+            if (shown.isEmpty()) Hint("No accounts yet. Scan a QR code from a website's two-factor setup page, or pick a screenshot of one, to add an account.")
             shown.forEach { e ->
                 AccountRow(
                     e, now,
@@ -168,6 +209,19 @@ fun AccountsScreen(vm: AppViewModel) {
             if (!v.text("uri").trim().startsWith("otpauth://")) return@FormDialog "The URI must start with otpauth://"
             vm.oath.addFromUri(v.text("uri"), v.check("touch")); null
         }
+
+        AccDialog.IMPORT -> FormDialog(
+            "Import ${importUris.size} accounts",
+            listOf(
+                Field.Note(importUris.joinToString("\n") { u ->
+                    val label = runCatching { java.net.URLDecoder.decode(u.substringAfter("://").substringAfter('/').substringBefore('?'), "UTF-8") }.getOrDefault("?")
+                    "• $label"
+                }),
+                Field.Check("touch", "Require touch for all"),
+            ),
+            confirmLabel = "Add all",
+            onDismiss = { dialog = null },
+        ) { v -> vm.oath.addMany(importUris, v.check("touch")); null }
 
         AccDialog.UNLOCK -> FormDialog(
             "Unlock accounts",

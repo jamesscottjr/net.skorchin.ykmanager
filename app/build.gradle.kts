@@ -14,8 +14,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 23
-        versionName = "2.21"
+        versionCode = 24
+        versionName = "2.22"
     }
 
     signingConfigs {
@@ -89,6 +89,7 @@ dependencies {
 
     // QR code scanning for adding OATH accounts
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     // Jetpack Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
