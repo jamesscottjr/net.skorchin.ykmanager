@@ -77,7 +77,7 @@ configurations.matching { it.name == "releaseRuntimeClasspath" }.configureEach {
 
 dependencies {
     // Yubico Android SDK (YubiKit)
-    val yubikit = "3.1.0"
+    val yubikit = "3.3.0"
     implementation("com.yubico.yubikit:android:$yubikit")
     implementation("com.yubico.yubikit:management:$yubikit")
     implementation("com.yubico.yubikit:yubiotp:$yubikit")
