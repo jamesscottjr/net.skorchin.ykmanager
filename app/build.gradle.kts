@@ -14,8 +14,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.22"
+        versionCode = 25
+        versionName = "2.23"
     }
 
     signingConfigs {

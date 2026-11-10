@@ -9,6 +9,12 @@ data class NdefContent(
     val value: String,
     /** True for a URI record, false for a text record. */
     val isUri: Boolean,
+    /**
+     * Set when the slot held a static password: the key then emits raw USB
+     * keyboard scan codes instead of characters, and this is their
+     * translation using the US keyboard layout.
+     */
+    val staticPassword: String? = null,
 ) {
     /**
      * The one-time password part of the record: whatever follows the last
@@ -17,6 +23,7 @@ data class NdefContent(
      */
     val otp: String
         get() {
+            staticPassword?.let { return it }
             val tail = value.substringAfterLast('#').substringAfterLast('/').substringAfterLast('=')
             if (looksLikeOtp(tail)) return tail
             val run = Regex("([cbdefghijklnrtuv]{32,48}|[0-9]{6,8})$").find(value)?.value
@@ -99,16 +106,70 @@ object NdefReader {
             tnf == 1 && type == "U" && payload.isNotEmpty() -> {
                 val code = payload[0].toInt() and 0xff
                 val prefix = if (code in 1..URL_PREFIXES.size) URL_PREFIXES[code - 1] else ""
-                NdefContent(prefix + String(payload, 1, payload.size - 1, Charsets.UTF_8), isUri = true)
+                content(prefix, payload.copyOfRange(1, payload.size), isUri = true)
             }
             tnf == 1 && type == "T" && payload.isNotEmpty() -> {
                 val status = payload[0].toInt() and 0xff
                 val langLen = status and 0x3F
-                val charset = if (status and 0x80 != 0) Charsets.UTF_16 else Charsets.UTF_8
-                NdefContent(String(payload, 1 + langLen, payload.size - 1 - langLen, charset), isUri = false)
+                if (status and 0x80 != 0)
+                    NdefContent(String(payload, 1 + langLen, payload.size - 1 - langLen, Charsets.UTF_16), isUri = false)
+                else content("", payload.copyOfRange(minOf(1 + langLen, payload.size), payload.size), isUri = false)
             }
-            tnf == 3 -> NdefContent(type + String(payload, Charsets.UTF_8), isUri = true) // absolute URI
-            else -> NdefContent(String(payload, Charsets.UTF_8), isUri = false)
+            tnf == 3 -> content(type, payload, isUri = true) // absolute URI
+            else -> content("", payload, isUri = false)
         }
+    }
+
+    /**
+     * Build the content, translating a static password's keyboard scan codes
+     * (which the key emits as-is over NFC) into readable characters.
+     */
+    private fun content(prefix: String, body: ByteArray, isUri: Boolean): NdefContent {
+        val split = splitScanCodes(body)
+        if (split == null) return NdefContent(prefix + String(body, Charsets.UTF_8), isUri)
+        val (textPart, codes) = split
+        val password = ScanCodes.decode(codes)
+        val text = prefix + String(textPart, Charsets.UTF_8)
+        return NdefContent(text + password, isUri, staticPassword = password)
+    }
+
+    /**
+     * If [body] contains bytes that cannot be text, treat everything after the
+     * last delimiter that precedes the first such byte as scan codes.
+     */
+    private fun splitScanCodes(body: ByteArray): Pair<ByteArray, ByteArray>? {
+        val firstBad = body.indexOfFirst { val v = it.toInt() and 0xff; v < 0x20 || v > 0x7E }
+        if (firstBad < 0) return null
+        var start = 0
+        for (k in firstBad - 1 downTo 0) {
+            if (body[k].toInt().toChar() in "#/=: ") { start = k + 1; break }
+        }
+        return body.copyOfRange(0, start) to body.copyOfRange(start, body.size)
+    }
+}
+
+/** USB HID keyboard usage IDs → characters, US layout; bit 7 is the Shift modifier. */
+object ScanCodes {
+    // Usage IDs 0x04..0x38 (0x29 Esc and 0x2A Backspace produce nothing).
+    private const val PLAIN = "abcdefghijklmnopqrstuvwxyz1234567890\n\u0000\u0000\t -=[]\\#;'`,./"
+    private const val SHIFT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#\$%^&*()\n\u0000\u0000\t _+{}|~:\"~<>?"
+    // Usage IDs 0x54..0x63 (numeric keypad).
+    private const val KEYPAD = "/*-+\n1234567890."
+
+    fun decode(codes: ByteArray): String {
+        val sb = StringBuilder()
+        for (b in codes) {
+            val v = b.toInt() and 0xff
+            if (v == 0) continue
+            val shift = v and 0x80 != 0
+            val c = when (val u = v and 0x7F) {
+                in 0x04..0x38 -> (if (shift) SHIFT else PLAIN)[u - 0x04]
+                in 0x54..0x63 -> KEYPAD[u - 0x54]
+                0x64 -> if (shift) '|' else '\\'
+                else -> '\uFFFD'
+            }
+            if (c != '\u0000') sb.append(c)
+        }
+        return sb.toString()
     }
 }

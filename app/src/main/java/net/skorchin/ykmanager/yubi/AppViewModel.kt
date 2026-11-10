@@ -113,9 +113,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     else -> {
                         if (settings.copyOnShow.value) copy(app, content.otp)
+                        val isStatic = content.staticPassword != null
                         core.showDialog(InfoDialog(
-                            "One-time password",
+                            if (isStatic) "Static password" else "One-time password",
                             content.otp + (if (content.otp != content.value) "\n\n${if (content.isUri) "Link" else "Text"}: ${content.value}" else "") +
+                                (if (isStatic) "\n\nThe slot holds a static password. Over NFC the key sends raw keyboard scan codes, which were translated using the US keyboard layout; characters typed on another layout may differ." else "") +
                                 (if (settings.copyOnShow.value) "\n\n(copied to the clipboard)" else ""),
                             content.otp,
                         ))
