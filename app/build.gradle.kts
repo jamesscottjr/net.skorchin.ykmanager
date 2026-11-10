@@ -18,18 +18,43 @@ android {
         versionName = "2.27"
     }
 
+    // Release signing material is resolved, in order, from:
+    //   1. keystore.properties at the project root (local developer builds), or
+    //   2. the YK_KEYSTORE_FILE / YK_KEYSTORE_PASSWORD / YK_KEY_ALIAS / YK_KEY_PASSWORD
+    //      environment variables (GitHub Actions, see .github/workflows/release.yml).
+    // If neither is present the release build is signed with the debug key so CI
+    // builds on forks and pull requests still produce an installable package.
+    val releaseSigning: Map<String, String>? = run {
+        val propsFile = rootProject.file("keystore.properties")
+        if (propsFile.exists()) {
+            val props = Properties()
+            propsFile.inputStream().use { props.load(it) }
+            mapOf(
+                "storeFile" to rootProject.file(props.getProperty("storeFile")).absolutePath,
+                "storePassword" to props.getProperty("storePassword"),
+                "keyAlias" to props.getProperty("keyAlias"),
+                "keyPassword" to props.getProperty("keyPassword"),
+            )
+        } else {
+            val file = System.getenv("YK_KEYSTORE_FILE")
+            if (!file.isNullOrBlank() && File(file).exists()) {
+                mapOf(
+                    "storeFile" to file,
+                    "storePassword" to (System.getenv("YK_KEYSTORE_PASSWORD") ?: ""),
+                    "keyAlias" to (System.getenv("YK_KEY_ALIAS") ?: ""),
+                    "keyPassword" to (System.getenv("YK_KEY_PASSWORD") ?: ""),
+                )
+            } else null
+        }
+    }
+
     signingConfigs {
-        // Uses keystore.properties at the project root if present, so the
-        // release APK is properly signed. Falls back to the debug key.
-        create("release") {
-            val propsFile = rootProject.file("keystore.properties")
-            if (propsFile.exists()) {
-                val props = Properties()
-                propsFile.inputStream().use { props.load(it) }
-                storeFile = rootProject.file(props.getProperty("storeFile"))
-                storePassword = props.getProperty("storePassword")
-                keyAlias = props.getProperty("keyAlias")
-                keyPassword = props.getProperty("keyPassword")
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = File(releaseSigning.getValue("storeFile"))
+                storePassword = releaseSigning.getValue("storePassword")
+                keyAlias = releaseSigning.getValue("keyAlias")
+                keyPassword = releaseSigning.getValue("keyPassword")
             }
         }
     }
@@ -37,7 +62,12 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning != null) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("YK Manager: no release keystore found; signing release build with the debug key.")
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

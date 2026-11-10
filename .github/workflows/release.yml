@@ -1,0 +1,223 @@
+name: Release build
+
+# Continuous delivery: builds the signed Android App Bundle (for Google Play)
+# and the signed APK (for side-loading), verifies the signature, attaches both
+# plus SHA-256 checksums to a GitHub Release, and can optionally upload the
+# bundle to a Google Play track.
+#
+# Triggers
+#   * Pushing a tag such as v2.27 (must match versionName in app/build.gradle.kts).
+#   * Manual "Run workflow" for a dry run from any branch.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions)
+#   KEYSTORE_BASE64     base64 of the upload keystore (base64 -w0 keystore.jks)
+#   KEYSTORE_PASSWORD   keystore password
+#   KEY_ALIAS           key alias (ykmanager)
+#   KEY_PASSWORD        key password
+# Optional, for the Play upload job
+#   PLAY_SERVICE_ACCOUNT_JSON   Google Play Console API service-account JSON
+# Optional repository variable
+#   PLAY_TRACK          internal | alpha | beta | production (default: no upload)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Create a GitHub Release (otherwise only upload workflow artifacts)"
+        type: boolean
+        default: false
+      play_track:
+        description: "Upload the bundle to this Google Play track"
+        type: choice
+        options: [none, internal, alpha, beta, production]
+        default: none
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: "17"
+
+jobs:
+  build:
+    name: Build signed AAB & APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version_name: ${{ steps.meta.outputs.version_name }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+      signed: ${{ steps.keystore.outputs.present }}
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+          cache-read-only: true
+
+      - name: Read version from app/build.gradle.kts
+        id: meta
+        run: |
+          VERSION_NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts)
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "### YK Manager v$VERSION_NAME (versionCode $VERSION_CODE)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check that the tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$TAG" != "${{ steps.meta.outputs.version_name }}" ]; then
+            echo "::error::Tag v$TAG does not match versionName ${{ steps.meta.outputs.version_name }} in app/build.gradle.kts"
+            exit 1
+          fi
+
+      - name: Restore release keystore from secrets
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Release keystore restored."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "::error::KEYSTORE_BASE64 secret is not set; tagged releases must be signed with the upload key."
+              exit 1
+            fi
+            echo "::warning::No KEYSTORE_BASE64 secret; this dry run will be signed with the debug key."
+          fi
+
+      - name: Build release bundle and APK
+        env:
+          YK_KEYSTORE_FILE: ${{ steps.keystore.outputs.present == 'true' && format('{0}/release.jks', runner.temp) || '' }}
+          YK_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          YK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          YK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APK signature and package name
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$BT/apksigner" verify --print-certs "$APK" | tee "$RUNNER_TEMP/certs.txt"
+          "$BT/aapt" dump badging "$APK" | grep -E "^package:" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q "name='net.skorchin.ykmanager'" <("$BT/aapt" dump badging "$APK") || { echo "::error::Unexpected applicationId"; exit 1; }
+          if [ "${{ steps.keystore.outputs.present }}" = "true" ] && grep -qi "CN=Android Debug" "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::Release APK is signed with the debug certificate although a keystore was provided"; exit 1
+          fi
+
+      - name: Stage distributable files
+        id: stage
+        run: |
+          V=${{ steps.meta.outputs.version_name }}
+          mkdir -p dist
+          cp app/build/outputs/bundle/release/app-release.aab "dist/YKManager-v$V-playstore.aab"
+          cp app/build/outputs/apk/release/app-release.apk  "dist/YKManager-v$V-release.apk"
+          if [ -f app/build/outputs/mapping/release/mapping.txt ]; then
+            cp app/build/outputs/mapping/release/mapping.txt "dist/YKManager-v$V-mapping.txt"
+          fi
+          (cd dist && sha256sum * > "YKManager-v$V-SHA256SUMS.txt" && cat "YKManager-v$V-SHA256SUMS.txt")
+          echo "dir=dist" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: YKManager-v${{ steps.meta.outputs.version_name }}-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+
+  github-release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources (for release notes)
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: YKManager-v${{ needs.build.outputs.version_name }}-release
+          path: dist
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', needs.build.outputs.version_name) }}
+          VERSION_NAME: ${{ needs.build.outputs.version_name }}
+          VERSION_CODE: ${{ needs.build.outputs.version_code }}
+          SIGNED: ${{ needs.build.outputs.signed }}
+        run: |
+          {
+            echo "YK Manager v$VERSION_NAME (versionCode $VERSION_CODE)"
+            echo
+            echo "* \`YKManager-v$VERSION_NAME-playstore.aab\` – Android App Bundle for Google Play Console"
+            echo "* \`YKManager-v$VERSION_NAME-release.apk\` – side-loadable APK (Android 7.0+)"
+            echo "* \`YKManager-v$VERSION_NAME-SHA256SUMS.txt\` – checksums"
+            echo
+            if [ "$SIGNED" != "true" ]; then
+              echo "> **Warning:** built without the release keystore; signed with the debug key."
+              echo
+            fi
+            if [ -f docs/RELEASE-NOTES.md ]; then
+              # Pull the section for this version if the file has one.
+              awk -v v="$VERSION_NAME" '
+                /^## / { p = index($0, "v" v) > 0 } p' docs/RELEASE-NOTES.md
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          PRERELEASE=""
+          case "$TAG" in *-*) PRERELEASE="--prerelease";; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "YK Manager v$VERSION_NAME" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --generate-notes $PRERELEASE
+          fi
+
+  play-upload:
+    name: Upload to Google Play
+    needs: build
+    if: >
+      needs.build.outputs.signed == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.play_track != 'none') ||
+       (github.event_name == 'push' && vars.PLAY_TRACK != ''))
+    runs-on: ubuntu-latest
+    environment: google-play
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: YKManager-v${{ needs.build.outputs.version_name }}-release
+          path: dist
+
+      - name: Upload bundle to Play Console
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: net.skorchin.ykmanager
+          releaseFiles: dist/YKManager-v${{ needs.build.outputs.version_name }}-playstore.aab
+          track: ${{ github.event_name == 'workflow_dispatch' && inputs.play_track || vars.PLAY_TRACK }}
+          status: draft
+          releaseName: v${{ needs.build.outputs.version_name }}

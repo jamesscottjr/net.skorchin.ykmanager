@@ -115,6 +115,16 @@ Release builds are signed with a local keystore that is **not** stored in this r
 
 Keep `keystore.jks` safe — Android only installs an update over an existing install if it is signed with the same key. For a personal app this self-signed setup is fine; if you ever publish to Play you'd use Play App Signing.
 
+### CI/CD (GitHub Actions)
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `android-ci.yml` – Android CI | push to `main`, pull requests | Unit tests, debug APK, release-variant compile check; APK and test reports as workflow artifacts |
+| `release.yml` – Release build | tag `vX.Y` (or manual run) | Signed AAB + APK, signature check, SHA-256 sums, GitHub Release; optional Google Play upload |
+| `security.yml` – Security scans | push, PR, weekly | OSV-Scanner SCA, Semgrep SAST, Android Lint |
+
+See [docs/CI-CD.md](docs/CI-CD.md) for the required secrets and the release procedure.
+
 ## Project layout
 
 ```
