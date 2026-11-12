@@ -2,6 +2,16 @@
 
 Each `## vX.Y` section is copied into the GitHub Release body by `.github/workflows/release.yml`.
 
+## v2.28 (versionCode 30)
+
+- Passkeys: tap a passkey to see everything the YubiKey stores about it — relying party
+  (ID, name, RP ID hash), user account (name, display name, user handle in hex/base64url/text),
+  credential ID (hex and WebAuthn base64url), transports, credProtect policy, large-blob key
+  presence, and the public key (algorithm, curve, coordinates, SHA-256 fingerprint)
+- Each value can be copied individually or all at once; delete is available from the details view
+- Credential enumeration now reads the full CTAP 2.1 response (credProtect, largeBlobKey)
+- Dependency updates merged via Dependabot: Kotlin 2.4.21, coroutines 1.11.0, GitHub Actions
+
 ## v2.27 (versionCode 29)
 
 - Security review: SCA (OSV), SAST (Semgrep) and Android Lint; see `docs/SECURITY-REVIEW.md`

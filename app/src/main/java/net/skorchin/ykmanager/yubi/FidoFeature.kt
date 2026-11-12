@@ -10,6 +10,7 @@ import com.yubico.yubikit.fido.ctap.FingerprintBioEnrollment
 import com.yubico.yubikit.fido.ctap.PinUvAuthProtocol
 import com.yubico.yubikit.fido.ctap.PinUvAuthProtocolV1
 import com.yubico.yubikit.fido.ctap.PinUvAuthProtocolV2
+import com.yubico.yubikit.fido.ctap.RawCredentialManagement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,22 @@ data class Passkey(
     val userName: String,
     val displayName: String?,
     val credentialId: Map<String, *>,
+    /** Everything else the authenticator reported for this credential (details screen). */
+    val details: PasskeyDetails,
+)
+
+/** Full CTAP 2.1 credential-management record for one discoverable credential. */
+data class PasskeyDetails(
+    val rpName: String?,
+    val rpIdHash: ByteArray,
+    val userId: ByteArray,
+    val credentialIdBytes: ByteArray,
+    val credentialType: String?,
+    val transports: List<String>,
+    /** COSE_Key map as stored on the key (integer labels). */
+    val publicKey: Map<Any?, *>,
+    val credProtect: Int?,
+    val hasLargeBlobKey: Boolean,
 )
 
 data class Fingerprint(val templateId: ByteArray, val name: String) {
@@ -129,8 +146,12 @@ class FidoFeature(private val core: YubiKeyCore) {
         } catch (e: CommandException) {
             throw UserFacingException("PIN was not accepted (${KeyErrors.ctap(e)}).")
         }
+        lastToken = token
         return CredentialManagement(s, proto, token)
     }
+
+    /** PIN/UV token of the most recent credMgmt() call, for RawCredentialManagement. */
+    private var lastToken: ByteArray? = null
 
     private fun bioEnroll(s: Ctap2Session, info: Ctap2Session.InfoData, pin: CharArray): FingerprintBioEnrollment {
         val proto = protocol(info)
@@ -149,16 +170,27 @@ class FidoFeature(private val core: YubiKeyCore) {
         val meta = cm.metadata
         val list = mutableListOf<Passkey>()
         if (meta.existingResidentCredentialsCount > 0) {
-            for (rp in cm.enumerateRps()) {
-                val rpId = rp.rp["id"] as? String ?: "?"
-                for (c in cm.enumerateCredentials(rp.rpIdHash)) {
-                    list += Passkey(
-                        rpId = rpId,
-                        userName = c.user["name"] as? String ?: "(no name)",
-                        displayName = c.user["displayName"] as? String,
-                        credentialId = c.credentialId,
-                    )
-                }
+            // Same token/protocol as cm, but keeps credProtect and large-blob information.
+            val raw = RawCredentialManagement(s, cm.pinUvAuth, lastToken ?: error("no token"))
+            for (c in raw.enumerateAll()) {
+                @Suppress("UNCHECKED_CAST")
+                list += Passkey(
+                    rpId = c.rp["id"] as? String ?: "?",
+                    userName = c.user["name"] as? String ?: "(no name)",
+                    displayName = c.user["displayName"] as? String,
+                    credentialId = c.credentialId,
+                    details = PasskeyDetails(
+                        rpName = c.rp["name"] as? String,
+                        rpIdHash = c.rpIdHash,
+                        userId = c.user["id"] as? ByteArray ?: ByteArray(0),
+                        credentialIdBytes = c.credentialId["id"] as? ByteArray ?: ByteArray(0),
+                        credentialType = c.credentialId["type"] as? String,
+                        transports = (c.credentialId["transports"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList(),
+                        publicKey = c.publicKey,
+                        credProtect = c.credProtect,
+                        hasLargeBlobKey = c.largeBlobKey != null,
+                    ),
+                )
             }
         }
         return list.sortedWith(compareBy({ it.rpId }, { it.userName })) to meta.existingResidentCredentialsCount

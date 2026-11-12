@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.skorchin.ykmanager.yubi.AppViewModel
 import net.skorchin.ykmanager.yubi.OtpFeature
 import net.skorchin.ykmanager.yubi.Passkey
+import net.skorchin.ykmanager.yubi.PasskeyInfo
 import com.yubico.yubikit.openpgp.KeyRef
 import com.yubico.yubikit.openpgp.Uif
 
@@ -40,6 +42,7 @@ fun PasskeysScreen(vm: AppViewModel) {
     val st by vm.fido.state.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<FidoDialog?>(null) }
     var toDelete by remember { mutableStateOf<Passkey?>(null) }
+    var selected by remember { mutableStateOf<Passkey?>(null) }
 
     ScreenColumn {
         PasskeyProviderCard()
@@ -78,15 +81,19 @@ fun PasskeysScreen(vm: AppViewModel) {
             }
             st.passkeys!!.isEmpty() -> Hint("No passkeys are stored on this YubiKey.")
             else -> {
+                Hint("Tap a passkey to see everything the key stores about it.")
                 st.passkeys!!.sortedBy { it.rpId }.forEach { p ->
-                    Card(Modifier.fillMaxWidth()) {
+                    Card(onClick = { selected = p }, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(p.rpId, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                                 Text(listOfNotNull(p.displayName?.takeIf { it != p.userName }, p.userName).joinToString(" · "),
                                     style = MaterialTheme.typography.bodySmall)
+                                Text(passkeySummary(p), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            IconButton(onClick = { selected = p }) { Icon(Icons.Filled.Info, "Details") }
                             IconButton(onClick = { toDelete = p }) { Icon(Icons.Filled.Delete, "Delete") }
                         }
                     }
@@ -121,11 +128,23 @@ fun PasskeysScreen(vm: AppViewModel) {
 
         null -> Unit
     }
+    selected?.let { p ->
+        PasskeyDetailsDialog(p, onDelete = { toDelete = p }, onDismiss = { selected = null })
+    }
     toDelete?.let { p ->
         ConfirmDialog("Delete passkey?",
             "The passkey for ${p.rpId} (${p.userName}) will be permanently deleted. You won't be able to sign in with it anymore.",
             "Delete", onDismiss = { toDelete = null }) { vm.fido.delete(p) }
     }
+}
+
+/** One-line summary under each passkey: algorithm, protection level, large blob. */
+private fun passkeySummary(p: Passkey): String {
+    val alg = (p.details.publicKey[3] as? Number)?.toInt()
+    val parts = mutableListOf(PasskeyInfo.algorithmName(alg).substringBefore(" ("))
+    p.details.credProtect?.let { parts += "credProtect $it" }
+    if (p.details.hasLargeBlobKey) parts += "large blob"
+    return parts.joinToString(" · ")
 }
 
 // ----------------------------------------------------------------------
