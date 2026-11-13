@@ -225,6 +225,21 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
     }
 
     /** Read the NDEF record the key emits to phones and show it, without leaving the app. */
+    /** Read one OTP from the NDEF tag (for the OTP decoder). */
+    fun readNdefOtp(onResult: (String) -> Unit) {
+        core.run("read an OTP over NFC", refresh = false) { device ->
+            val content = try {
+                core.smartCard(device) { NdefReader.read(it, knownNdefPrefixes()) }
+            } catch (e: Exception) {
+                if (e is UserFacingException) throw e
+                throw UserFacingException("Could not read the NDEF record: ${e.message}. Hold the key against the phone over NFC.")
+            }
+            if (content.staticPassword != null) throw UserFacingException(
+                "The NFC output is a static password, not a Yubico OTP. Point NFC (NDEF) output at the Yubico OTP slot.")
+            onResult(content.otp)
+        }
+    }
+
     fun showNdefOutput() {
         core.run("read the NFC (NDEF) output", refresh = false) { device ->
             val content = try {

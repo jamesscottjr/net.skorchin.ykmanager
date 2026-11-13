@@ -2,6 +2,14 @@
 
 Each `## vX.Y` section is copied into the GitHub Release body by `.github/workflows/release.yml`.
 
+## v2.31 (versionCode 33)
+
+- OTP slots → OTP decoder: decrypt a Yubico OTP with the slot's AES key to see the private ID,
+  usage and session counters, timer and random field; the checksum confirms the key is right
+- Capture the OTP by touching the key (USB), Read over NFC, or paste an OTP or my.yubico.com link
+- Optional expected private ID check; serial number shown when the public ID is serial-based
+- Runs entirely on the phone; the key and results are never stored
+
 ## v2.30 (versionCode 32)
 
 - Show NFC output: static passwords are now decoded correctly. Scan codes for digits 3–0,

@@ -38,6 +38,8 @@ import net.skorchin.ykmanager.yubi.SlotType
 import net.skorchin.ykmanager.yubi.SlotView
 import net.skorchin.ykmanager.yubi.SlotWriteOptions
 import net.skorchin.ykmanager.yubi.OtpOutputSettings
+import net.skorchin.ykmanager.yubi.DecodedOtp
+import net.skorchin.ykmanager.yubi.OtpDecoder
 import net.skorchin.ykmanager.yubi.num
 import com.yubico.yubikit.yubiotp.Slot
 import kotlinx.coroutines.delay
@@ -84,6 +86,8 @@ fun SlotsScreen(vm: AppViewModel) {
                 SmallButton("Show NFC output") { vm.otp.showNdefOutput() }
             }
         }
+
+        OtpDecoderCard(vm)
 
         NfcHandlingCard(vm)
 
@@ -397,3 +401,93 @@ private tailrec fun android.content.Context.findActivity(): android.app.Activity
     is android.content.ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+/**
+ * Decrypts a Yubico OTP with the slot's AES key to show the private ID, counters and timer.
+ * Everything stays in this composable's memory; nothing is saved or logged.
+ */
+@Composable
+private fun OtpDecoderCard(vm: AppViewModel) {
+    val context = LocalContext.current
+    var otp by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    var expected by remember { mutableStateOf("") }
+    var showKey by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<DecodedOtp?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun decode() {
+        runCatching { OtpDecoder.decode(otp, key, expected) }
+            .onSuccess { result = it; error = null }
+            .onFailure { result = null; error = it.message ?: "Could not decode the OTP" }
+    }
+
+    SectionCard {
+        SectionTitle("OTP decoder")
+        Spacer(Modifier.height(4.dp))
+        Hint("Decrypts a Yubico OTP with the slot's AES key to show what the key encrypted: the private ID, " +
+            "usage and session counters and the timer. Runs on this phone only; nothing is stored. " +
+            "The YubiKey itself never outputs the private ID in the clear.")
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = otp, onValueChange = { otp = it; result = null; error = null },
+            label = { Text("OTP") },
+            supportingText = { Text(if (vm.core.isUsb) "Focus here and touch the key, or paste an OTP or my.yubico.com link"
+                else "Paste an OTP or link, or use Read over NFC") },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = key, onValueChange = { key = it; result = null; error = null },
+            label = { Text("AES key (32 hex characters)") },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+            visualTransformation = if (showKey) androidx.compose.ui.text.input.VisualTransformation.None
+                else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = androidx.compose.ui.text.input.KeyboardType.Password, autoCorrectEnabled = false),
+            trailingIcon = { TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "Hide" else "Show") } },
+        )
+        OutlinedTextField(
+            value = expected, onValueChange = { expected = it; result = null; error = null },
+            label = { Text("Expected private ID (optional, 12 hex)") },
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        ButtonRow {
+            SmallButton("Decode", enabled = otp.isNotBlank() && key.isNotBlank()) { decode() }
+            if (!vm.core.isUsb) SmallButton("Read over NFC") {
+                vm.otp.readNdefOtp { o -> otp = o; result = null; error = null; if (key.isNotBlank()) decode() }
+            }
+            SmallButton("Clear") { otp = ""; key = ""; expected = ""; result = null; error = null; showKey = false }
+        }
+        error?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
+        result?.let { r ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (r.crcValid) "Checksum OK: the AES key is correct" else
+                    "Checksum failed: wrong AES key, or the OTP was mistyped. The values below are meaningless.",
+                color = if (r.crcValid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Spacer(Modifier.height(4.dp))
+            InfoRow("Public ID", r.publicId.ifEmpty { "(none)" } + if (r.publicId.isNotEmpty()) " (hex ${r.publicIdHex})" else "")
+            r.serialFromPublicId?.let { InfoRow("Serial in public ID", it.toString()) }
+            InfoRow("Private ID", r.privateIdHex)
+            r.privateIdMatches?.let { InfoRow("Matches expected", if (it) "Yes" else "No") }
+            InfoRow("Usage counter", "${r.usageCounter} (power-ups)")
+            InfoRow("Session counter", "${r.sessionCounter} (OTPs since power-up)")
+            InfoRow("Timer", "${r.timestamp} (%.1f s since power-up + random start)".format(r.timestampSeconds))
+            InfoRow("Random", "%04x".format(r.random))
+            InfoRow("CRC", "%04x".format(r.crc))
+            InfoRow("Decrypted block", r.plaintextHex)
+            Spacer(Modifier.height(6.dp))
+            ButtonRow {
+                if (r.crcValid) SmallButton("Copy private ID") { copyToClipboard(context, "Private ID", r.privateIdHex) }
+            }
+            Hint("Validation servers reject an OTP whose usage/session counters are not higher than the last one they saw.")
+        }
+    }
+}
+
