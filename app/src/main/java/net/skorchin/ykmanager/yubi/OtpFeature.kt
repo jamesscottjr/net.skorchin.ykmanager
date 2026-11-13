@@ -131,6 +131,17 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
 
     private val history = SlotHistoryStore(context)
 
+    /** NDEF prefixes this app has written, so a read can split prefix from slot output exactly. */
+    private val ndefPrefs = context.getSharedPreferences("ndef_prefixes", Context.MODE_PRIVATE)
+
+    fun knownNdefPrefixes(): Set<String> = ndefPrefs.getStringSet("prefixes", emptySet()).orEmpty()
+
+    private fun rememberNdefPrefix(prefix: String) {
+        if (prefix.isEmpty()) return
+        val set = (knownNdefPrefixes() + prefix).toList().takeLast(20).toSet()
+        ndefPrefs.edit().putStringSet("prefixes", set).apply()
+    }
+
     /** Identification results gathered this session, keyed by serial + slot. */
     private val identified = mutableMapOf<String, Identification>()
 
@@ -217,7 +228,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
     fun showNdefOutput() {
         core.run("read the NFC (NDEF) output", refresh = false) { device ->
             val content = try {
-                core.smartCard(device) { NdefReader.read(it) }
+                core.smartCard(device) { NdefReader.read(it, knownNdefPrefixes()) }
             } catch (e: Exception) {
                 if (e is UserFacingException) throw e
                 throw UserFacingException(
@@ -227,7 +238,12 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
             val body = buildString {
                 append(if (content.isUri) "Link: " else "Text: ").append(content.value)
                 append("\n\nSlot output: ").append(content.otp)
-                if (isStatic) append("\n\nThe slot holds a static password. Over NFC the key sends raw keyboard scan codes; they were translated with the US keyboard layout.")
+                if (isStatic) {
+                    append("\n\nThe slot holds a static password. Over NFC the key sends raw keyboard scan codes " +
+                        "instead of characters; they were translated with the US keyboard layout, so a password " +
+                        "programmed for another layout may show different characters.")
+                    content.scanCodesHex?.let { append("\n\nScan codes: ").append(it) }
+                }
                 else if (content.otp.length in 32..48 && content.otp.all { it in "cbdefghijklnrtuv" }) append("\n\nThis is a Yubico OTP (ModHex).")
                 else if (content.otp.length in 6..8 && content.otp.all { it.isDigit() }) append("\n\nThis is an OATH-HOTP code.")
                 append("\n\nEach read makes the key generate a new value.")
@@ -550,6 +566,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                     p.sendAndReceive(com.yubico.yubikit.core.smartcard.Apdu(0, 0x01, cmd.toInt(), 0, data))
                 }
             }
+            rememberNdefPrefix(if (asText) prefix.trim() else prefix.trim().ifBlank { NdefReader.DEFAULT_URI })
             core.toast("NFC (NDEF) output now uses slot ${slot.num}" +
                 (if (asText) " as text" else "") + (if (prefix.isBlank()) "" else " with prefix \"${prefix.trim()}\""))
         }

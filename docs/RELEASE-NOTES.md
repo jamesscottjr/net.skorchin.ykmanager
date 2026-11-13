@@ -2,6 +2,17 @@
 
 Each `## vX.Y` section is copied into the GitHub Release body by `.github/workflows/release.yml`.
 
+## v2.30 (versionCode 32)
+
+- Show NFC output: static passwords are now decoded correctly. Scan codes for digits 3–0,
+  space, Tab, Enter and most punctuation are also printable bytes (some equal '#', '/', '='),
+  so passwords containing them were split from the prefix in the wrong place and shown garbled
+- The prefix is matched exactly when it is Yubico's default or one this app wrote; otherwise
+  a stricter check is used
+- Backslash and pipe are programmed with the standard US scan code (0x31); passwords
+  written by older versions (0x32) still decode correctly
+- The dialog lists the raw scan codes so the translation can be checked
+
 ## v2.29 (versionCode 31)
 
 - Settings → OTP output: the Settings tab of the Windows YubiKey Personalization Tool —

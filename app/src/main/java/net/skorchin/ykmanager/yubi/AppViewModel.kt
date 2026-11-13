@@ -100,8 +100,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             NfcTapAction.NOTHING -> true
             NfcTapAction.ACCOUNTS -> { _screen.value = Screen.ACCOUNTS; false }
             NfcTapAction.COPY_OTP, NfcTapAction.SHOW_OTP, NfcTapAction.OPEN_LINK -> {
-                val content = intentNdef?.let { runCatching { NdefReader.parse(it) }.getOrNull() }
-                    ?: core.smartCard(device) { NdefReader.read(it) }
+                val prefixes = otp.knownNdefPrefixes()
+                val content = intentNdef?.let { runCatching { NdefReader.parse(it, prefixes) }.getOrNull() }
+                    ?: core.smartCard(device) { NdefReader.read(it, prefixes) }
                 when (settings.nfcTapAction.value) {
                     NfcTapAction.COPY_OTP -> {
                         copy(app, content.otp)

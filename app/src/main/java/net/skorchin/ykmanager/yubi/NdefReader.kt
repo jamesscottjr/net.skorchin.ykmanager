@@ -15,6 +15,8 @@ data class NdefContent(
      * translation using the US keyboard layout.
      */
     val staticPassword: String? = null,
+    /** Hex of the bytes that were decoded as keyboard scan codes, for checking the translation. */
+    val scanCodesHex: String? = null,
 ) {
     /**
      * The one-time password part of the record: whatever follows the last
@@ -81,10 +83,21 @@ object NdefReader {
         return out
     }
 
-    fun read(conn: SmartCardConnection): NdefContent = parse(readMessage(conn))
+    fun read(conn: SmartCardConnection, knownPrefixes: Collection<String> = emptyList()): NdefContent =
+        parse(readMessage(conn), knownPrefixes)
 
-    /** Parse the first record of an NDEF message (as produced by [readMessage] or NdefMessage.toByteArray()). */
-    fun parse(msg: ByteArray): NdefContent {
+    /** Yubico's factory default URI prefix. */
+    const val DEFAULT_URI = "https://my.yubico.com/yk/#"
+
+    /**
+     * Parse the first record of an NDEF message (as produced by [readMessage] or NdefMessage.toByteArray()).
+     * [knownPrefixes] are prefixes the key may have been configured with (e.g. ones this app wrote);
+     * when the record starts with one, everything after it is the slot output, which avoids guessing
+     * where a static password's scan codes begin.
+     */
+    fun parse(msg: ByteArray, knownPrefixes: Collection<String> = emptyList()): NdefContent {
+        val prefixes = (knownPrefixes.map { it.trim() } + DEFAULT_URI).filter { it.isNotEmpty() }.distinct()
+            .sortedByDescending { it.length }
         if (msg.size < 3) throw IOException("NDEF record is empty")
         var i = 0
         val header = msg[i++].toInt() and 0xff
@@ -106,45 +119,78 @@ object NdefReader {
             tnf == 1 && type == "U" && payload.isNotEmpty() -> {
                 val code = payload[0].toInt() and 0xff
                 val prefix = if (code in 1..URL_PREFIXES.size) URL_PREFIXES[code - 1] else ""
-                content(prefix, payload.copyOfRange(1, payload.size), isUri = true)
+                content(prefix, payload.copyOfRange(1, payload.size), isUri = true, prefixes)
             }
             tnf == 1 && type == "T" && payload.isNotEmpty() -> {
                 val status = payload[0].toInt() and 0xff
                 val langLen = status and 0x3F
                 if (status and 0x80 != 0)
                     NdefContent(String(payload, 1 + langLen, payload.size - 1 - langLen, Charsets.UTF_16), isUri = false)
-                else content("", payload.copyOfRange(minOf(1 + langLen, payload.size), payload.size), isUri = false)
+                else content("", payload.copyOfRange(minOf(1 + langLen, payload.size), payload.size), isUri = false, prefixes)
             }
-            tnf == 3 -> content(type, payload, isUri = true) // absolute URI
-            else -> content("", payload, isUri = false)
+            tnf == 3 -> content(type, payload, isUri = true, prefixes) // absolute URI
+            else -> content("", payload, isUri = false, prefixes)
         }
     }
 
     /**
      * Build the content, translating a static password's keyboard scan codes
      * (which the key emits as-is over NFC) into readable characters.
+     *
+     * Scan codes for digits 3-0, Enter, Tab, space and most punctuation (0x20-0x38) are also
+     * printable ASCII, including the bytes for '#', '/', '=', ':' and space, so the split point
+     * cannot be found by looking for the first unprintable byte alone.
      */
-    private fun content(prefix: String, body: ByteArray, isUri: Boolean): NdefContent {
-        val split = splitScanCodes(body)
-        if (split == null) return NdefContent(prefix + String(body, Charsets.UTF_8), isUri)
-        val (textPart, codes) = split
-        val password = ScanCodes.decode(codes)
-        val text = prefix + String(textPart, Charsets.UTF_8)
-        return NdefContent(text + password, isUri, staticPassword = password)
+    private fun content(prefix: String, body: ByteArray, isUri: Boolean, knownPrefixes: List<String>): NdefContent {
+        val full = prefix.toByteArray(Charsets.UTF_8) + body
+        val start = knownSplit(full, knownPrefixes) ?: guessSplit(full)
+            ?: return NdefContent(String(full, Charsets.UTF_8), isUri)
+        val tail = full.copyOfRange(start, full.size)
+        val text = String(full, 0, start, Charsets.UTF_8)
+        if (tail.isEmpty() || !tail.all(::isScanCode) || looksLikeTextOtp(tail))
+            return NdefContent(String(full, Charsets.UTF_8), isUri)
+        val password = ScanCodes.decode(tail).trimEnd('\n')
+        return NdefContent(text + password, isUri, staticPassword = password,
+            scanCodesHex = tail.joinToString(" ") { "%02x".format(it) })
+    }
+
+    /** Index just after a known prefix, if the record starts with one. */
+    private fun knownSplit(full: ByteArray, prefixes: List<String>): Int? {
+        for (p in prefixes) {
+            val pb = p.toByteArray(Charsets.UTF_8)
+            if (full.size >= pb.size && full.copyOfRange(0, pb.size).contentEquals(pb)) return pb.size
+        }
+        return null
     }
 
     /**
-     * If [body] contains bytes that cannot be text, treat everything after the
-     * last delimiter that precedes the first such byte as scan codes.
+     * Unknown prefix: find delimiters after which every remaining byte is a valid scan code and at
+     * least one byte is not printable text. Prefer the earliest '#' or '=' (how OTP prefixes
+     * normally end), otherwise the earliest such delimiter.
      */
-    private fun splitScanCodes(body: ByteArray): Pair<ByteArray, ByteArray>? {
-        val firstBad = body.indexOfFirst { val v = it.toInt() and 0xff; v < 0x20 || v > 0x7E }
+    private fun guessSplit(full: ByteArray): Int? {
+        val firstBad = full.indexOfFirst { val v = it.toInt() and 0xff; v < 0x20 || v > 0x7E }
         if (firstBad < 0) return null
-        var start = 0
-        for (k in firstBad - 1 downTo 0) {
-            if (body[k].toInt().toChar() in "#/=: ") { start = k + 1; break }
+        val candidates = (0 until firstBad).filter { k ->
+            full[k].toInt().toChar() in "#/=: " && (k + 1 until full.size).all { isScanCode(full[it]) }
         }
-        return body.copyOfRange(0, start) to body.copyOfRange(start, body.size)
+        val k = candidates.firstOrNull { full[it].toInt().toChar() in "#=" } ?: candidates.firstOrNull()
+        return when {
+            k != null -> k + 1
+            (0 until full.size).all { isScanCode(full[it]) } -> 0
+            else -> null
+        }
+    }
+
+    private fun isScanCode(b: Byte): Boolean {
+        val u = b.toInt() and 0x7F
+        return u in 0x04..0x38 || u in 0x54..0x64
+    }
+
+    /** ASCII Yubico OTP (ModHex) or HOTP digits: these are text, not scan codes. */
+    private fun looksLikeTextOtp(b: ByteArray): Boolean {
+        val s = String(b, Charsets.US_ASCII)
+        return (s.length in 32..48 && s.all { it in "cbdefghijklnrtuv" }) || (s.length in 6..8 && s.all { it.isDigit() })
     }
 }
 
@@ -163,6 +209,9 @@ object ScanCodes {
             if (v == 0) continue
             val shift = v and 0x80 != 0
             val c = when (val u = v and 0x7F) {
+                // 0x32 is the ISO "non-US #" key, which US hosts type as backslash (older
+                // YK Manager versions programmed backslash this way).
+                0x32 -> if (shift) '|' else '\\'
                 in 0x04..0x38 -> (if (shift) SHIFT else PLAIN)[u - 0x04]
                 in 0x54..0x63 -> KEYPAD[u - 0x54]
                 0x64 -> if (shift) '|' else '\\'

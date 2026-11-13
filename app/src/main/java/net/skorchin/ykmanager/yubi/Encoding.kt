@@ -98,7 +98,7 @@ object Encoding {
         put('=', 0x2E); put('+', 0x2E or SHIFT)
         put('[', 0x2F); put('{', 0x2F or SHIFT)
         put(']', 0x30); put('}', 0x30 or SHIFT)
-        put('\\', 0x32); put('|', 0x32 or SHIFT)
+        put('\\', 0x31); put('|', 0x31 or SHIFT)
         put(';', 0x33); put(':', 0x33 or SHIFT)
         put('\'', 0x34); put('"', 0x34 or SHIFT)
         put('`', 0x35); put('~', 0x35 or SHIFT)

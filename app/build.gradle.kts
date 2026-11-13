@@ -13,8 +13,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 31
-        versionName = "2.29"
+        versionCode = 32
+        versionName = "2.30"
     }
 
     // Release signing material is resolved, in order, from:
