@@ -13,6 +13,8 @@ Each `## vX.Y` section is copied into the GitHub Release body by `.github/workfl
 - OTP slots: "Update settings" rewrites a programmed keyboard slot's output settings without
   replacing its credential (requires Allow update, firmware 2.3+)
 - Recipes: each slot step stores the output settings in effect when it was added
+- Toolchain: AGP 9.5.1 with built-in Kotlin, Gradle 9.9, Compose BOM 2026.09, compileSdk 37
+  (targetSdk stays 36); YubiKit 3.1.0 → 3.3.0 (new "FIDO over smart card" capability shown)
 
 ## v2.28 (versionCode 30)
 

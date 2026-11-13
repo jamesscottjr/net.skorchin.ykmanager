@@ -58,6 +58,7 @@ fun capLabel(c: Capability): String = when (c) {
     Capability.PIV -> "PIV"
     Capability.OPENPGP -> "OpenPGP"
     Capability.HSMAUTH -> "YubiHSM Auth"
+    Capability.FIDO_CCID -> "FIDO over smart card"
 }
 
 fun formFactorName(f: FormFactor): String = when (f) {

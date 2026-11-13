@@ -61,6 +61,6 @@ Uploads are created in **draft** status so nothing goes live without a review in
 
 ## Build environment
 
-- `ubuntu-latest` runner with Temurin JDK 17 and the pre-installed Android SDK (AGP downloads platform 36 / build-tools on demand).
+- `ubuntu-latest` runner with Temurin JDK 17 and the pre-installed Android SDK (AGP downloads platform 37 / build-tools on demand).
 - Gradle wrapper 8.14.2, validated by `gradle/actions/setup-gradle` (`validate-wrappers: true`); build cache is written only from `main`.
 - The release runtime classpath is locked (`app/gradle.lockfile`), so CI builds exactly what was scanned.

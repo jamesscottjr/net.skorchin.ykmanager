@@ -91,7 +91,7 @@ USB-connected keys act immediately. For NFC, start an action in the UI and the a
 
 - Android 7.0+ (API 24) phone
 - Any YubiKey (NFC model for tap-to-connect, or any USB key + OTG adapter); see Supported keys
-- To build: Android Studio (latest), JDK 17. The project uses AGP 8.13.2, Kotlin 2.2.10, compileSdk 36, YubiKit 3.1.0.
+- To build: Android Studio (latest), JDK 17. The project uses AGP 9.5.1 (built-in Kotlin, 2.4.21), Gradle 9.9, compileSdk 37 / targetSdk 36, YubiKit 3.3.0.
 
 ## Build & install
 

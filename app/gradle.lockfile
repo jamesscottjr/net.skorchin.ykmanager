@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :app:dependencies --write-locks
 androidx.activity:activity-compose:1.9.2=releaseRuntimeClasspath
 androidx.activity:activity-ktx:1.9.2=releaseRuntimeClasspath
 androidx.activity:activity:1.9.2=releaseRuntimeClasspath
@@ -126,15 +127,15 @@ com.journeyapps:zxing-android-embedded:4.3.0=releaseRuntimeClasspath
 com.squareup.moshi:moshi:1.15.2=releaseRuntimeClasspath
 com.squareup.okio:okio-jvm:3.7.0=releaseRuntimeClasspath
 com.squareup.okio:okio:3.7.0=releaseRuntimeClasspath
-com.yubico.yubikit:android:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:core:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:fido:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:management:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:oath:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:openpgp:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:piv:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:support:3.1.0=releaseRuntimeClasspath
-com.yubico.yubikit:yubiotp:3.1.0=releaseRuntimeClasspath
+com.yubico.yubikit:android:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:core:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:fido:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:management:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:oath:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:openpgp:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:piv:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:support:3.3.0=releaseRuntimeClasspath
+com.yubico.yubikit:yubiotp:3.3.0=releaseRuntimeClasspath
 javax.inject:javax.inject:1=releaseRuntimeClasspath
 org.bouncycastle:bcpkix-jdk18on:1.86=releaseRuntimeClasspath
 org.bouncycastle:bcprov-jdk18on:1.86=releaseRuntimeClasspath
@@ -151,6 +152,6 @@ org.jetbrains.kotlinx:kotlinx-serialization-bom:1.7.3=releaseRuntimeClasspath
 org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.7.3=releaseRuntimeClasspath
 org.jetbrains.kotlinx:kotlinx-serialization-core:1.7.3=releaseRuntimeClasspath
 org.jetbrains:annotations:23.0.0=releaseRuntimeClasspath
-org.jspecify:jspecify:1.0.0=releaseRuntimeClasspath
-org.slf4j:slf4j-api:2.0.17=releaseRuntimeClasspath
+org.jspecify:jspecify:1.0.1=releaseRuntimeClasspath
+org.slf4j:slf4j-api:2.0.20=releaseRuntimeClasspath
 empty=

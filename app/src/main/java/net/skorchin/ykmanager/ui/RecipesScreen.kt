@@ -331,6 +331,7 @@ private fun RecipeEditor(vm: AppViewModel, existing: Recipe?, onDone: (Recipe?) 
     var del2 by remember { mutableStateOf(existing?.deleteSlot2 ?: false) }
     var curAcc by remember { mutableStateOf(existing?.currentAccessCodeHex ?: "") }
     var slotDialog by remember { mutableStateOf<Pair<Slot, Prog>?>(null) }
+    val otpOut by vm.settings.otpOutput.collectAsStateWithLifecycle()
     var pickKind by remember { mutableStateOf<Slot?>(null) }
 
     // Credentials
@@ -480,12 +481,12 @@ private fun RecipeEditor(vm: AppViewModel, existing: Recipe?, onDone: (Recipe?) 
     }
 
     slotDialog?.let { (slot, kind) ->
-        FormDialog("${kind.title} · slot ${slot.num}", slotProgramFields(kind, null, false, forRecipe = true, defaultEnter = vm.settings.otpOutput.value.appendEnter, output = vm.settings.otpOutput.value), "Add to recipe",
+        FormDialog("${kind.title} · slot ${slot.num}", slotProgramFields(kind, null, false, forRecipe = true, defaultEnter = otpOut.appendEnter, output = otpOut), "Add to recipe",
             onDismiss = { slotDialog = null }) { v ->
             val (err, parsed) = parseSlotProgram(kind, v)
             if (err != null || parsed == null) return@FormDialog err ?: "Invalid input"
             val step = SlotStep(kind.name, parsed.first, parsed.second.appendEnter, parsed.second.newAccessCodeHex,
-                vm.settings.otpOutput.value)
+                otpOut)
             if (slot == Slot.ONE) { slot1 = step; del1 = false } else { slot2 = step; del2 = false }
             null
         }

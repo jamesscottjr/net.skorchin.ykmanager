@@ -47,7 +47,7 @@ independent third-party audit or a penetration test.
 **Parsers of untrusted input**
 - `NdefReader`: record header/length fields are bounds-checked; truncated records raise `IOException`. Static-password scan-code translation operates on a byte table with range checks.
 - `QrCodes`: images are decoded on-device; the Google Authenticator export parser is a minimal protobuf reader with explicit truncation checks; resulting URIs are still validated by YubiKit's `CredentialData.parseUri` before anything is written to the key.
-- Device/application responses are parsed by YubiKit 3.1.0 (Yubico's library) and, for OpenPGP, by a tolerant reader in `OpenPgpFeature` that converts parse failures into user-facing errors.
+- Device/application responses are parsed by YubiKit 3.3.0 (Yubico's library) and, for OpenPGP, by a tolerant reader in `OpenPgpFeature` that converts parse failures into user-facing errors.
 
 **Network**
 - Only `passkey/CallerVerifier` uses the network: HTTPS GET of a relying party's `/.well-known/assetlinks.json` and Google's privileged-browser list on `gstatic.com`, with 8 s timeouts, redirects disabled (as the Asset Links spec requires), an 8 KB/response cap, system CA trust, and caching. Cleartext traffic is blocked by platform default (targetSdk 36).
@@ -58,7 +58,7 @@ independent third-party audit or a penetration test.
 ## Residual items / recommendations
 
 - **Independent review**: this was a tool-assisted self-review. Before relying on the app for high-value credentials, an external security review of the passkey provider (`passkey/`) and of the FIDO PIN/UV handling is advisable.
-- **YubiKit 3.1.0 → 3.3.0**: no known advisories, but Yubico's newer releases carry bug fixes. Upgrade after a hardware regression pass (the YubiKit API surface changed between minor versions before).
+- **YubiKit 3.1.0 → 3.3.0**: done in v2.29 (no known advisories; adds the FIDO-over-CCID capability). A hardware regression pass on real keys is still recommended.
 - **Unit tests** exist for the passkey package only. Adding tests for `NdefReader.parse`, `ScanCodes.decode` and the `otpauth-migration` parser would guard the untrusted-input paths.
 - **Clipboard**: copied codes stay on the clipboard until replaced; a timed clear (e.g. 30–60 s) could be added.
 - Re-run the scans on every release (the GitHub workflow does this automatically) and review Dependabot alerts.

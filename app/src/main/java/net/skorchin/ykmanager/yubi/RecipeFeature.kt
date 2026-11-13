@@ -436,7 +436,7 @@ class RecipeFeature(
 
     private fun capShort(c: Capability) = when (c) {
         Capability.OTP -> "OTP"; Capability.U2F -> "U2F"; Capability.FIDO2 -> "FIDO2"; Capability.OATH -> "OATH"
-        Capability.PIV -> "PIV"; Capability.OPENPGP -> "OpenPGP"; Capability.HSMAUTH -> "HSMAuth"
+        Capability.PIV -> "PIV"; Capability.OPENPGP -> "OpenPGP"; Capability.HSMAUTH -> "HSMAuth"; Capability.FIDO_CCID -> "FIDO-CCID"
     }
 
     // ---------------------------------------------------------------- apply
