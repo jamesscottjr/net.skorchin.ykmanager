@@ -125,7 +125,7 @@ data class OtpOutputSettings(
                 appendEnter = o.optBoolean("cr", d.appendEnter),
                 delayAfterFirst = o.optBoolean("delay1", d.delayAfterFirst),
                 delayAfterSecond = o.optBoolean("delay2", d.delayAfterSecond),
-                pacing = OtpPacing.values().firstOrNull { it.name == o.optString("pacing") } ?: d.pacing,
+                pacing = OtpPacing.entries.firstOrNull { it.name == o.optString("pacing") } ?: d.pacing,
                 numericKeypad = o.optBoolean("numeric", d.numericKeypad),
                 fastTrigger = o.optBoolean("fastTrig", d.fastTrigger),
                 sendReference = o.optBoolean("sendRef", d.sendReference),

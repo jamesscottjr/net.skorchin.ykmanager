@@ -13,8 +13,8 @@ android {
         applicationId = "net.skorchin.ykmanager"
         minSdk = 24
         targetSdk = 36
-        versionCode = 33
-        versionName = "2.31"
+        versionCode = 34
+        versionName = "2.32"
     }
 
     // Release signing material is resolved, in order, from:
@@ -120,8 +120,8 @@ dependencies {
     implementation("androidx.credentials:credentials:1.6.0")
 
     // X.509 certificate / CSR generation and PKCS#12 / PEM import for PIV
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.86")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.87")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.87")
 
     // QR code scanning for adding OATH accounts
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
@@ -137,10 +137,11 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // AndroidX
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

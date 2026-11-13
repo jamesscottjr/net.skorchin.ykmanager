@@ -39,8 +39,7 @@ class RawCredentialManagement(
             if (params != null) Cbor.encodeTo(out, params)
             auth = pinUvAuth.authenticate(pinUvToken, out.toByteArray())
         }
-        @Suppress("UNCHECKED_CAST")
-        return ctap.credentialManagement(subCommand.toInt(), params, pinUvAuth.version, auth) as Map<Int, *>
+        return ctap.credentialManagement(subCommand.toInt(), params, pinUvAuth.version, auth)
     }
 
     /** Enumerates every relying party and every credential stored for it. */

@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.core.content.edit
 
 /** What to do when a YubiKey is tapped over NFC while no action is waiting for it. */
 enum class NfcTapAction(val label: String, val description: String) {
@@ -38,7 +39,7 @@ class AppSettings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private val _nfcTapAction = MutableStateFlow(
-        prefs.getString(KEY_NFC_TAP, null)?.let { v -> NfcTapAction.values().firstOrNull { it.name == v } }
+        prefs.getString(KEY_NFC_TAP, null)?.let { v -> NfcTapAction.entries.firstOrNull { it.name == v } }
             ?: NfcTapAction.REFRESH
     )
     val nfcTapAction: StateFlow<NfcTapAction> = _nfcTapAction.asStateFlow()
@@ -49,12 +50,12 @@ class AppSettings(context: Context) {
 
     fun setNfcTapAction(a: NfcTapAction) {
         _nfcTapAction.value = a
-        prefs.edit().putString(KEY_NFC_TAP, a.name).apply()
+        prefs.edit { putString(KEY_NFC_TAP, a.name) }
     }
 
     fun setCopyOnShow(v: Boolean) {
         _copyOnShow.value = v
-        prefs.edit().putBoolean(KEY_COPY_ON_SHOW, v).apply()
+        prefs.edit { putBoolean(KEY_COPY_ON_SHOW, v) }
     }
 
     private val _otpOutput = MutableStateFlow(
@@ -67,7 +68,7 @@ class AppSettings(context: Context) {
 
     fun setOtpOutput(v: OtpOutputSettings) {
         _otpOutput.value = v
-        prefs.edit().putString(KEY_OTP_OUTPUT, v.toJson().toString()).apply()
+        prefs.edit { putString(KEY_OTP_OUTPUT, v.toJson().toString()) }
     }
 
     companion object {

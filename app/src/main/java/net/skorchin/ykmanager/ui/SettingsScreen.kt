@@ -46,7 +46,7 @@ fun SettingsScreen(vm: AppViewModel) {
             }
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
-            NfcTapAction.values().forEach { a ->
+            NfcTapAction.entries.forEach { a ->
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -113,7 +113,7 @@ private fun OtpOutputSection(out: OtpOutputSettings, set: (OtpOutputSettings) ->
         SubHeading("Output speed")
         CheckRow("0.5 s pause after the first part", out.delayAfterFirst) { set(out.copy(delayAfterFirst = it)) }
         CheckRow("0.5 s pause after the OTP / password", out.delayAfterSecond) { set(out.copy(delayAfterSecond = it)) }
-        OtpPacing.values().forEach { p ->
+        OtpPacing.entries.forEach { p ->
             Row(
                 Modifier.fillMaxWidth().clickable { set(out.copy(pacing = p)) }.padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,

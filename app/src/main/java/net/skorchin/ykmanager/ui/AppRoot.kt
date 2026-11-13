@@ -24,9 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Key
@@ -102,7 +101,7 @@ private fun Screen.icon(): ImageVector = when (this) {
     Screen.OPENPGP -> Icons.Filled.Lock
     Screen.APPLICATIONS -> Icons.Filled.Apps
     Screen.RESET -> Icons.Filled.RestartAlt
-    Screen.RECIPES -> Icons.Filled.PlaylistAddCheck
+    Screen.RECIPES -> Icons.AutoMirrored.Filled.PlaylistAddCheck
     Screen.FINGERPRINTS -> Icons.Filled.Fingerprint
     Screen.SETTINGS -> Icons.Filled.Settings
     Screen.ABOUT -> Icons.Filled.Info
@@ -173,7 +172,7 @@ fun AppRoot(vm: AppViewModel) {
                     )
                     HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
-                    Screen.values().filter { it.availableFor(keyInfo) }.forEach { s ->
+                    Screen.entries.filter { it.availableFor(keyInfo) }.forEach { s ->
                         if (s == Screen.APPLICATIONS || s == Screen.SETTINGS) {
                             HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         }

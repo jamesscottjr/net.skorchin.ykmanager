@@ -173,7 +173,7 @@ class PivFeature(private val core: YubiKeyCore) {
                 val s = PivSession(conn)
                 s.auth(mgmtKeyHex)
                 if (touchPolicy == TouchPolicy.ALWAYS || touchPolicy == TouchPolicy.CACHED) core.showTouchPrompt(true)
-                val pub: PublicKeyValues = s.generateKeyValues(slot, keyType, pinPolicy, touchPolicy)
+                val pub: PublicKeyValues = s.generateKey(slot, keyType, pinPolicy, touchPolicy)
                 val spki = SubjectPublicKeyInfo.getInstance(pub.encoded)
                 s.pin(pin)
                 val signer = PivSigner(s, slot, keyType)
@@ -366,7 +366,7 @@ class PivFeature(private val core: YubiKeyCore) {
         const val DEFAULT_MGMT_KEY = "010203040506070801020304050607080102030405060708"
 
         val MAIN_SLOTS = listOf(Slot.AUTHENTICATION, Slot.SIGNATURE, Slot.KEY_MANAGEMENT, Slot.CARD_AUTH)
-        val RETIRED_SLOTS = Slot.values().filter { it.name.startsWith("RETIRED") }
+        val RETIRED_SLOTS = Slot.entries.filter { it.name.startsWith("RETIRED") }
 
         fun slotHex(slot: Slot) = "%02X".format(slot.value)
 

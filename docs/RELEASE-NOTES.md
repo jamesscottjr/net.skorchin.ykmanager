@@ -2,6 +2,18 @@
 
 Each `## vX.Y` section is copied into the GitHub Release body by `.github/workflows/release.yml`.
 
+## v2.32 (versionCode 34)
+
+Maintenance release: code quality and dependency updates, no feature changes.
+
+- Updated AndroidX Activity 1.13.0, Lifecycle 2.11.0, Core KTX 1.19.1 (now declared explicitly),
+  Bouncy Castle 1.87 and Gradle 9.9.1
+- PIV key generation uses YubiKit's current `generateKey` API instead of the deprecated one
+- Kotlin idioms: `entries` instead of `values()`, KTX `SharedPreferences.edit {}`, `toUri()`,
+  `Bitmap.scale()`, primitive `mutableIntStateOf` state, removed redundant casts and `!!`
+- Themed (monochrome) launcher icon for Android 13+; round icon declared
+- Kotlin compiler warnings 7 → 0 (two intentional, documented suppressions); Android Lint warnings 49 → 14 (the rest are legacy icon artwork or reviewed false positives)
+
 ## v2.31 (versionCode 33)
 
 - OTP slots → OTP decoder: decrypt a Yubico OTP with the slot's AES key to see the private ID,

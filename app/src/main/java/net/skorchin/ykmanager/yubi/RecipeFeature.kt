@@ -428,7 +428,7 @@ class RecipeFeature(
     }
 
     private fun capList(bits: Int, supported: Int): String {
-        val names = Capability.values().filter { supported and it.bit != 0 }.map { c ->
+        val names = Capability.entries.filter { supported and it.bit != 0 }.map { c ->
             capShort(c) + if (bits and c.bit != 0) "" else " (off)"
         }
         return names.joinToString(", ")

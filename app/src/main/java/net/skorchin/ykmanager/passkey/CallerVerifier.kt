@@ -2,7 +2,6 @@ package net.skorchin.ykmanager.passkey
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.util.Base64
 import androidx.annotation.RequiresApi
 import androidx.credentials.provider.CallingAppInfo
@@ -16,6 +15,7 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import androidx.core.net.toUri
 
 /**
  * Works out who is asking for a passkey, and on whose behalf.
@@ -72,7 +72,7 @@ object CallerVerifier {
                 )
             }
             val clean = origin.trimEnd('/')
-            val host = Uri.parse(clean).host?.lowercase(Locale.ROOT)
+            val host = clean.toUri().host?.lowercase(Locale.ROOT)
                 ?: return@withContext Result.Rejected("The browser sent an invalid website address.")
             return@withContext Result.Allowed(clean, host, label, isBrowser = true)
         }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.core.content.edit
 
 /** Site name used by the in-app "Test passkey sheet" button; never a real domain. */
 const val PASSKEY_SELF_TEST_RP_ID = "selftest.ykmanager.invalid"
@@ -27,13 +28,13 @@ class PasskeyStore(context: Context) {
     /** Ask for the FIDO2 PIN before the NFC tap, so a single tap is enough. */
     var askPinFirst: Boolean
         get() = prefs.getBoolean(KEY_ASK_PIN_FIRST, true)
-        set(value) { prefs.edit().putBoolean(KEY_ASK_PIN_FIRST, value).apply() }
+        set(value) { prefs.edit { putBoolean(KEY_ASK_PIN_FIRST, value) } }
 
     /** Show remembered accounts in the Android passkey sheet. */
     var rememberAccounts: Boolean
         get() = prefs.getBoolean(KEY_REMEMBER, true)
         set(value) {
-            prefs.edit().putBoolean(KEY_REMEMBER, value).apply()
+            prefs.edit { putBoolean(KEY_REMEMBER, value) }
             if (!value) clearAccounts()
         }
 
@@ -91,7 +92,7 @@ class PasskeyStore(context: Context) {
     }
 
     @Synchronized
-    fun clearAccounts() { prefs.edit().remove(KEY_ACCOUNTS).apply() }
+    fun clearAccounts() { prefs.edit { remove(KEY_ACCOUNTS) } }
 
     private fun save(list: List<Account>) {
         val arr = JSONArray()
@@ -104,7 +105,7 @@ class PasskeyStore(context: Context) {
                 put("used", a.lastUsed)
             })
         }
-        prefs.edit().putString(KEY_ACCOUNTS, arr.toString()).apply()
+        prefs.edit { putString(KEY_ACCOUNTS, arr.toString()) }
     }
 
     // ------------------------------------------------------------------
@@ -118,7 +119,7 @@ class PasskeyStore(context: Context) {
         val arr = runCatching { JSONArray(prefs.getString(KEY_LOG, "[]")) }.getOrDefault(JSONArray())
         val out = JSONArray().put(entry)
         for (i in 0 until minOf(arr.length(), MAX_LOG - 1)) out.put(arr.get(i))
-        prefs.edit().putString(KEY_LOG, out.toString()).apply()
+        prefs.edit { putString(KEY_LOG, out.toString()) }
     }
 
     /**
@@ -131,7 +132,7 @@ class PasskeyStore(context: Context) {
         val arr = runCatching { JSONArray(prefs.getString(KEY_ASKED, "[]")) }.getOrDefault(JSONArray())
         val out = JSONArray().put(entry)
         for (i in 0 until minOf(arr.length(), MAX_ASKED - 1)) out.put(arr.get(i))
-        prefs.edit().putString(KEY_ASKED, out.toString()).apply()
+        prefs.edit { putString(KEY_ASKED, out.toString()) }
     }
 
     /** Newest "asked" entries first. */
@@ -155,7 +156,7 @@ class PasskeyStore(context: Context) {
     }.getOrDefault(0)
 
     @Synchronized
-    fun clearLog() { prefs.edit().remove(KEY_LOG).remove(KEY_ASKED).apply() }
+    fun clearLog() { prefs.edit { remove(KEY_LOG).remove(KEY_ASKED) } }
 
     private companion object {
         const val KEY_LOG = "diagnostics_log"

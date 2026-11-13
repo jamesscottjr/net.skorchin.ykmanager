@@ -10,6 +10,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import androidx.core.content.edit
 
 /**
  * Persists OATH access keys ("Remember on this phone"), keyed by the OATH
@@ -41,15 +42,15 @@ class AccessKeyStore(context: Context) {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, secretKey())
             val blob = cipher.iv + cipher.doFinal(key)
-            prefs.edit().putString(deviceId, Base64.encodeToString(blob, Base64.NO_WRAP)).apply()
+            prefs.edit { putString(deviceId, Base64.encodeToString(blob, Base64.NO_WRAP)) }
         }.onFailure { Log.w(TAG, "Could not remember the OATH password", it) } // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_logging
     }
 
     fun contains(deviceId: String) = prefs.contains(deviceId)
 
-    fun remove(deviceId: String) { prefs.edit().remove(deviceId).apply() }
+    fun remove(deviceId: String) { prefs.edit { remove(deviceId) } }
 
-    fun clear() { prefs.edit().clear().apply() }
+    fun clear() { prefs.edit { clear() } }
 
     private fun secretKey(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

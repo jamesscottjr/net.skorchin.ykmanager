@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -248,7 +249,7 @@ private fun recipeSteps(r: Recipe): List<Pair<String, String>> {
     return out
 }
 
-private fun capNames(bits: Int) = Capability.values().filter { bits and it.bit != 0 }.joinToString(", ") { capLabel(it) }.ifEmpty { "none" }
+private fun capNames(bits: Int) = Capability.entries.filter { bits and it.bit != 0 }.joinToString(", ") { capLabel(it) }.ifEmpty { "none" }
 
 @Composable
 private fun PreviewRow(it: net.skorchin.ykmanager.yubi.PreviewItem) {
@@ -317,9 +318,9 @@ private fun RecipeEditor(vm: AppViewModel, existing: Recipe?, onDone: (Recipe?) 
     // Applications
     var cfgOn by remember { mutableStateOf(existing?.hasConfig ?: false) }
     var usbOn by remember { mutableStateOf(existing?.usbCaps != null) }
-    var usbCaps by remember { mutableStateOf(existing?.usbCaps ?: ALL_CAPS) }
+    var usbCaps by remember { mutableIntStateOf(existing?.usbCaps ?: ALL_CAPS) }
     var nfcOn by remember { mutableStateOf(existing?.nfcCaps != null) }
-    var nfcCaps by remember { mutableStateOf(existing?.nfcCaps ?: ALL_CAPS) }
+    var nfcCaps by remember { mutableIntStateOf(existing?.nfcCaps ?: ALL_CAPS) }
     var cr by remember { mutableStateOf(existing?.chalrespTimeout?.toString() ?: "") }
     var ae by remember { mutableStateOf(existing?.autoEjectTimeout?.toString() ?: "") }
     var lock by remember { mutableStateOf(existing?.lockCodeHex ?: "") }
@@ -470,7 +471,7 @@ private fun RecipeEditor(vm: AppViewModel, existing: Recipe?, onDone: (Recipe?) 
             title = { Text("Slot ${slot.num}: credential type") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Prog.values().forEach { k ->
+                    Prog.entries.forEach { k ->
                         TextButton(onClick = { pickKind = null; slotDialog = slot to k }, modifier = Modifier.fillMaxWidth()) { Text(k.title) }
                     }
                 }
@@ -493,7 +494,7 @@ private fun RecipeEditor(vm: AppViewModel, existing: Recipe?, onDone: (Recipe?) 
     }
 }
 
-private val ALL_CAPS = Capability.values().fold(0) { a, c -> a or c.bit }
+private val ALL_CAPS = Capability.entries.fold(0) { a, c -> a or c.bit }
 
 private fun validate(
     name: String, fidoOn: Boolean, fidoPin: String, oathOn: Boolean, oathPw: String,
@@ -538,7 +539,7 @@ private fun CapPicker(label: String, on: Boolean, onToggle: (Boolean) -> Unit, c
         Switch(on, onToggle)
     }
     if (on) {
-        Capability.values().forEach { c ->
+        Capability.entries.forEach { c ->
             Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(capLabel(c), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(caps and c.bit != 0, { onCaps(if (it) caps or c.bit else caps and c.bit.inv()) })

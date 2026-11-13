@@ -16,6 +16,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.yubico.yubikit.oath.Base32
 import java.net.URLDecoder
 import java.net.URLEncoder
+import androidx.core.graphics.scale
 
 /** Decoding QR codes from images and turning their contents into otpauth:// URIs. */
 object QrCodes {
@@ -74,7 +75,7 @@ object QrCodes {
         val m = maxOf(b.width, b.height)
         if (m <= maxSide) return null
         val f = maxSide.toFloat() / m
-        return Bitmap.createScaledBitmap(b, (b.width * f).toInt().coerceAtLeast(1), (b.height * f).toInt().coerceAtLeast(1), true)
+        return b.scale((b.width * f).toInt().coerceAtLeast(1), (b.height * f).toInt().coerceAtLeast(1))
     }
 
     /**

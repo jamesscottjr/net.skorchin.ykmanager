@@ -1,5 +1,6 @@
 package net.skorchin.ykmanager.passkey
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.os.Build
@@ -84,6 +85,9 @@ class PasskeyActivity : ComponentActivity() {
     private lateinit var flow: PasskeyFlow
     private var finished = false
 
+    // The class is @RequiresApi(34); the runtime guard is kept as defence in
+    // depth in case the exported activity is ever started on an older OS.
+    @SuppressLint("ObsoleteSdkInt")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT < 34) { finish(); return }

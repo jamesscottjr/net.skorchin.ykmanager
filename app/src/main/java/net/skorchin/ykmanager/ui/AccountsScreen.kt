@@ -300,7 +300,7 @@ private fun AccountRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(4.dp))
                 if (valid) Text(
-                    code!!.value.chunked(if (code.value.length == 8) 4 else 3).joinToString(" "),
+                    code.value.chunked(if (code.value.length == 8) 4 else 3).joinToString(" "),
                     fontFamily = FontFamily.Monospace, fontSize = 26.sp, color = MaterialTheme.colorScheme.primary,
                 ) else Row(verticalAlignment = Alignment.CenterVertically) {
                     if (e.credential.isTouchRequired) Icon(Icons.Filled.TouchApp, null, Modifier.size(18.dp))
@@ -313,7 +313,7 @@ private fun AccountRow(
             }
             if (valid && e.isTotp) {
                 val period = e.credential.period * 1000f
-                val left = ((code!!.validUntil - now) / period).coerceIn(0f, 1f)
+                val left = ((code.validUntil - now) / period).coerceIn(0f, 1f)
                 Box(contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(progress = { left }, modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
                     Text("${((code.validUntil - now) / 1000).coerceAtLeast(0)}", style = MaterialTheme.typography.labelSmall)

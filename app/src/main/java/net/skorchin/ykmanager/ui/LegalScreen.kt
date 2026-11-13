@@ -2,7 +2,6 @@ package net.skorchin.ykmanager.ui
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +29,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.skorchin.ykmanager.BuildConfig
+import androidx.core.content.edit
+import androidx.core.net.toUri
 
 /** Bump when the Terms change so existing users are asked to accept again. */
 const val TERMS_VERSION = 1
@@ -40,7 +41,7 @@ fun termsAccepted(context: Context): Boolean =
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_ACCEPTED, 0) >= TERMS_VERSION
 
 fun acceptTerms(context: Context) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_ACCEPTED, TERMS_VERSION).apply()
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putInt(KEY_ACCEPTED, TERMS_VERSION) }
 }
 
 object LegalText {
@@ -191,7 +192,7 @@ fun LegalScreen() {
             Text(n.copyright, style = MaterialTheme.typography.bodySmall)
             Text(n.license, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.url))) }
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, n.url.toUri())) }
             }) { Text(n.url, style = MaterialTheme.typography.bodySmall) }
         }
 

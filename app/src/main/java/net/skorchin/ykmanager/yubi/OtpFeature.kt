@@ -17,6 +17,7 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.text.DateFormat
 import java.util.Date
+import androidx.core.content.edit
 
 /** The type of credential stored in an OTP slot. */
 enum class SlotType(val label: String) {
@@ -114,9 +115,9 @@ class SlotHistoryStore(context: Context) {
         prefs.getString(key(serial, slot), null)?.let(SlotHistory::fromJson)
 
     fun put(serial: Int?, slot: Slot, h: SlotHistory?) {
-        prefs.edit().apply {
+        prefs.edit {
             if (h == null) remove(key(serial, slot)) else putString(key(serial, slot), h.toJson())
-        }.apply()
+        }
     }
 
     fun swap(serial: Int?) {
@@ -139,7 +140,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
     private fun rememberNdefPrefix(prefix: String) {
         if (prefix.isEmpty()) return
         val set = (knownNdefPrefixes() + prefix).toList().takeLast(20).toSet()
-        ndefPrefs.edit().putStringSet("prefixes", set).apply()
+        ndefPrefs.edit { putStringSet("prefixes", set) }
     }
 
     /** Identification results gathered this session, keyed by serial + slot. */

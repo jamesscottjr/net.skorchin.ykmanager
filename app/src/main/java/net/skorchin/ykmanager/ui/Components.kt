@@ -48,7 +48,7 @@ import com.yubico.yubikit.management.Capability
 import com.yubico.yubikit.management.FormFactor
 
 fun capabilityNames(bits: Int): String =
-    Capability.values().filter { bits and it.bit != 0 }.joinToString { capLabel(it) }.ifEmpty { "none" }
+    Capability.entries.filter { bits and it.bit != 0 }.joinToString { capLabel(it) }.ifEmpty { "none" }
 
 fun capLabel(c: Capability): String = when (c) {
     Capability.OTP -> "Yubico OTP"

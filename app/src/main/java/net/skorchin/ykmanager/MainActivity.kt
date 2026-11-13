@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
      * the tag to the system instead, so the user lands in the app with the
      * tap treated like any other scan.
      */
+    @Suppress("DEPRECATION") // ACTION_TAG_DISCOVERED is still dispatched by the system as a fallback
     private fun handleNfcIntent(intent: Intent?) {
         val action = intent?.action ?: return
         if (action != NfcAdapter.ACTION_NDEF_DISCOVERED && action != NfcAdapter.ACTION_TECH_DISCOVERED &&

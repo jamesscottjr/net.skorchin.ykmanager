@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import com.yubico.yubikit.android.transport.nfc.NfcYubiKeyDevice
 import com.yubico.yubikit.management.Capability
 import androidx.lifecycle.AndroidViewModel
@@ -15,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.core.net.toUri
 
 enum class Screen(val title: String, val capability: Capability? = null) {
     HOME("Home"),
@@ -110,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     NfcTapAction.OPEN_LINK -> {
                         if (!content.isUri) throw UserFacingException("The NDEF record is text, not a link: ${content.value}")
-                        val uri = Uri.parse(content.value)
+                        val uri = content.value.toUri()
                         // Only web links: a tag could otherwise carry intent:, file: or other schemes.
                         if (uri.scheme?.lowercase() !in setOf("http", "https"))
                             throw UserFacingException("Only http(s) links are opened. The record is: ${content.value}")
@@ -146,6 +146,5 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         core.close()
-        super.onCleared()
     }
 }

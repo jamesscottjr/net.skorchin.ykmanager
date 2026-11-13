@@ -87,7 +87,7 @@ object PasskeyCeremony {
                 } catch (m: MultipleAssertionsAvailable) {
                     val names = runCatching {
                         m.users.mapIndexed { i, u ->
-                            listOfNotNull(u.name.ifBlank { null }, u.displayName?.takeIf { it.isNotBlank() && it != u.name })
+                            listOfNotNull(u.name.ifBlank { null }, u.displayName.takeIf { it.isNotBlank() && it != u.name })
                                 .joinToString(" · ").ifBlank { "Passkey ${i + 1}" }
                         }
                     }.getOrElse { (1..m.assertionCount).map { "Passkey $it" } }

@@ -3,7 +3,6 @@ package net.skorchin.ykmanager.passkey
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.drawable.Icon
-import android.net.Uri
 import android.os.CancellationSignal
 import android.os.OutcomeReceiver
 import androidx.annotation.RequiresApi
@@ -25,6 +24,7 @@ import net.skorchin.ykmanager.R
 import org.json.JSONObject
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
+import androidx.core.net.toUri
 
 /**
  * Makes YK Manager a passkey provider in Android's Credential Manager
@@ -149,7 +149,7 @@ class YubiKeyPasskeyService : CredentialProviderService() {
         val code = requestCodes.incrementAndGet()
         val intent = Intent(this, PasskeyActivity::class.java)
             .setAction(PasskeyActivity.ACTION_SELF_TEST)
-            .setData(Uri.parse("ykmanager-passkey://selftest/$code"))
+            .setData("ykmanager-passkey://selftest/$code".toUri())
         // Credential Manager fills the request extras into this intent, so it must be mutable;
         // it is explicit (our own activity) and unique per entry, which is Android's documented pattern.
         return PendingIntent.getActivity(this, code, intent, // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_pending_intent_not_immutable
@@ -163,7 +163,7 @@ class YubiKeyPasskeyService : CredentialProviderService() {
         val intent = Intent(this, PasskeyActivity::class.java)
             .setAction(if (create) PasskeyActivity.ACTION_CREATE else PasskeyActivity.ACTION_GET)
             // A unique data URI keeps entries from sharing one PendingIntent.
-            .setData(Uri.parse("ykmanager-passkey://entry/$code"))
+            .setData("ykmanager-passkey://entry/$code".toUri())
             .putExtra(PasskeyActivity.EXTRA_CREDENTIAL_ID, credentialId)
         // Mutable by requirement: Credential Manager adds the provider request to the intent. Explicit target.
         return PendingIntent.getActivity( // nosemgrep: mobsf.mobsfscan.kotlin.android.android_kotlin_pending_intent_not_immutable

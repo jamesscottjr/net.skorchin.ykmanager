@@ -112,7 +112,7 @@ fun SlotsScreen(vm: AppViewModel) {
                 Column {
                     Hint("This replaces anything currently in the slot.")
                     Spacer(Modifier.height(8.dp))
-                    Prog.values().forEach { p ->
+                    Prog.entries.forEach { p ->
                         OutlinedButton(onClick = { action = SlotAction.Program(a.slot, p) },
                             modifier = Modifier.fillMaxWidth()) { Text(p.title) }
                     }

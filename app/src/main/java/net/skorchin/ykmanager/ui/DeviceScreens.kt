@@ -91,7 +91,7 @@ fun HomeScreen(vm: AppViewModel) {
                     Spacer(Modifier.height(6.dp))
                     val supported = d.getSupportedCapabilities(t)
                     val enabled = d.config.getEnabledCapabilities(t) ?: 0
-                    Capability.values().filter { supported and it.bit != 0 }.forEach { c ->
+                    Capability.entries.filter { supported and it.bit != 0 }.forEach { c ->
                         InfoRow(capLabel(c), if (enabled and c.bit != 0) "enabled" else "disabled")
                     }
                 }
@@ -102,7 +102,7 @@ fun HomeScreen(vm: AppViewModel) {
             SectionTitle("Manage")
             Spacer(Modifier.height(6.dp))
             ButtonRow {
-                Screen.values()
+                Screen.entries
                     .filter { it != Screen.HOME && it != Screen.ABOUT && it != Screen.RESET && it != Screen.RECIPES && it.availableFor(k) }
                     .forEach { s -> SmallButton(s.title) { vm.navigate(s) } }
             }
@@ -162,7 +162,7 @@ fun ApplicationsScreen(vm: AppViewModel) {
                 if (hasNfc) Text("NFC", Modifier.width(64.dp), style = MaterialTheme.typography.labelLarge)
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
-            Capability.values().filter { (usbSupported or nfcSupported) and it.bit != 0 }.forEach { c ->
+            Capability.entries.filter { (usbSupported or nfcSupported) and it.bit != 0 }.forEach { c ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(capLabel(c), Modifier.weight(1f))
                     Row(Modifier.width(64.dp)) {
