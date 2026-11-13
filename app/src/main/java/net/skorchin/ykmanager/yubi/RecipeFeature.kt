@@ -41,8 +41,15 @@ data class SlotStep(
     val program: SlotProgram,
     val appendEnter: Boolean,
     val newAccessCodeHex: String,
+    /** Output settings captured when the step was added; older recipes get the defaults. */
+    val output: OtpOutputSettings = OtpOutputSettings(),
 ) {
     val summary: String
+        get() = baseSummary + output.copy(appendEnter = appendEnter).changesFromDefault()
+            .takeIf { it.isNotEmpty() && program !is SlotProgram.ChallengeResponse }
+            ?.joinToString(prefix = " · ").orEmpty()
+
+    private val baseSummary: String
         get() = when (val p = program) {
             is SlotProgram.YubicoOtp -> "Yubico OTP, public ID " + when {
                 p.useSerialAsPublicId -> "from serial"
@@ -60,6 +67,7 @@ data class SlotStep(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("kind", kind); put("enter", appendEnter); put("acc", newAccessCodeHex)
+        put("out", output.toJson())
         when (val p = program) {
             is SlotProgram.YubicoOtp -> { put("t", "otp"); put("pub", p.publicIdModhex); put("serial", p.useSerialAsPublicId); put("priv", p.privateIdHex); put("key", p.keyHex) }
             is SlotProgram.Hotp -> { put("t", "hotp"); put("sec", p.secretBase32); put("d8", p.digits8); put("ctr", p.initialCounter) }
@@ -77,7 +85,8 @@ data class SlotStep(
                 "static" -> SlotProgram.StaticPassword(str("pw"), o.optInt("len", 38), o.optBoolean("modhex"))
                 else -> SlotProgram.ChallengeResponse(str("sec"), o.optBoolean("touch"))
             }
-            return SlotStep(o.optString("kind"), program, o.optBoolean("enter", true), o.optString("acc"))
+            return SlotStep(o.optString("kind"), program, o.optBoolean("enter", true), o.optString("acc"),
+                OtpOutputSettings.fromJson(o.optJSONObject("out")))
         }
     }
 }
@@ -454,7 +463,7 @@ class RecipeFeature(
                 listOf(Slot.ONE to (recipe.slot1 to recipe.deleteSlot1), Slot.TWO to (recipe.slot2 to recipe.deleteSlot2)).forEach { (slot, pair) ->
                     val (s, del) = pair
                     if (s != null) step("Slot ${slot.num}: ${s.summary}") {
-                        val r = otp.programOn(device, slot, s.program, SlotWriteOptions(s.appendEnter, recipe.currentAccessCodeHex, s.newAccessCodeHex), serial)
+                        val r = otp.programOn(device, slot, s.program, SlotWriteOptions(s.appendEnter, recipe.currentAccessCodeHex, s.newAccessCodeHex, s.output), serial)
                         ("Programmed as ${r.type.label}" + r.details.entries.joinToString("") { "; ${it.key} ${it.value}" }) to r.secrets
                     } else if (del) step("Slot ${slot.num}: delete") {
                         otp.deleteOn(device, slot, recipe.currentAccessCodeHex, serial)

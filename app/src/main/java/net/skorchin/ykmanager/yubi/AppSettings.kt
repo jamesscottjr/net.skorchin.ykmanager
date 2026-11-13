@@ -57,8 +57,22 @@ class AppSettings(context: Context) {
         prefs.edit().putBoolean(KEY_COPY_ON_SHOW, v).apply()
     }
 
+    private val _otpOutput = MutableStateFlow(
+        prefs.getString(KEY_OTP_OUTPUT, null)
+            ?.let { runCatching { OtpOutputSettings.fromJson(org.json.JSONObject(it)) }.getOrNull() }
+            ?: OtpOutputSettings()
+    )
+    /** Output settings used whenever an OTP slot is programmed (Personalization Tool "Settings"). */
+    val otpOutput: StateFlow<OtpOutputSettings> = _otpOutput.asStateFlow()
+
+    fun setOtpOutput(v: OtpOutputSettings) {
+        _otpOutput.value = v
+        prefs.edit().putString(KEY_OTP_OUTPUT, v.toJson().toString()).apply()
+    }
+
     companion object {
         private const val KEY_NFC_TAP = "nfc_tap_action"
         private const val KEY_COPY_ON_SHOW = "nfc_copy_on_show"
+        private const val KEY_OTP_OUTPUT = "otp_output_settings"
     }
 }

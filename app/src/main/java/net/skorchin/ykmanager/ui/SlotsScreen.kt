@@ -37,6 +37,7 @@ import net.skorchin.ykmanager.yubi.SlotProgram
 import net.skorchin.ykmanager.yubi.SlotType
 import net.skorchin.ykmanager.yubi.SlotView
 import net.skorchin.ykmanager.yubi.SlotWriteOptions
+import net.skorchin.ykmanager.yubi.OtpOutputSettings
 import net.skorchin.ykmanager.yubi.num
 import com.yubico.yubikit.yubiotp.Slot
 import kotlinx.coroutines.delay
@@ -50,6 +51,7 @@ private sealed interface SlotAction {
     data class Program(val slot: Slot, val kind: Prog) : SlotAction
     data class Delete(val slot: Slot) : SlotAction
     data class Hmac(val slot: Slot) : SlotAction
+    data class UpdateOutput(val slot: Slot) : SlotAction
     data object Swap : SlotAction
     data object Ndef : SlotAction
 }
@@ -131,6 +133,24 @@ fun SlotsScreen(vm: AppViewModel) {
             Field.Text("ch", "Challenge (hex, up to 64 bytes)", supporting = "Leave empty to send an empty challenge"),
         ), "Calculate", onDismiss = { action = null }) { v ->
             vm.otp.calculateHmac(a.slot, v.text("ch").replace(" ", "")); null
+        }
+
+        is SlotAction.UpdateOutput -> {
+            val out by vm.settings.otpOutput.collectAsStateWithLifecycle()
+            FormDialog("Update slot ${a.slot.num} settings", listOfNotNull(
+                Field.Note("Rewrites only the output and device settings of this slot; the credential stays. " +
+                    "The current settings cannot be read from the key, so all of them are replaced with the ones " +
+                    "from Settings → OTP output:"),
+                Field.Note("Types: " + out.outputPattern(firstPart = "first part", secondPart = "second part") +
+                    " (the first part is the public ID for Yubico OTP; HOTP and static passwords have none)."),
+                out.changesFromDefault().filterNot { it.startsWith("tab") || it.contains("Enter") }
+                    .takeIf { it.isNotEmpty() }?.let { Field.Note("Options: " + it.joinToString()) },
+                if (!out.allowUpdate) Field.Note("\"Allow update\" is off: after this, the slot's settings can only be changed by reprogramming it.") else null,
+                Field.Text("acc", "Access code (hex, if set)"),
+                Field.Note("Works only if the slot was programmed with \"Allow update\" (the default in this app) on firmware 2.3 or newer."),
+            ), "Update", onDismiss = { action = null }) { v ->
+                vm.otp.updateOutput(a.slot, out, v.text("acc")); null
+            }
         }
 
         SlotAction.Swap -> ConfirmDialog("Swap slots?",
@@ -220,6 +240,7 @@ private fun SlotCard(vm: AppViewModel, v: SlotView, onAction: (SlotAction) -> Un
                     if (keyboard && !vm.core.isUsb) SmallButton("Read over NFC") { vm.otp.identifyViaNdef(v.slot) }
                     if (chalresp) SmallButton("Test challenge-response") { vm.otp.probeChallengeResponse(v.slot) }
                     if (v.type == SlotType.CHALRESP) SmallButton("Calculate HMAC") { onAction(SlotAction.Hmac(v.slot)) }
+                    if (keyboard && !chalresp) SmallButton("Update settings") { onAction(SlotAction.UpdateOutput(v.slot)) }
                     SmallButton("Reconfigure") { onAction(SlotAction.Pick(v.slot)) }
                     SmallButton("Delete") { onAction(SlotAction.Delete(v.slot)) }
                 }
@@ -242,9 +263,23 @@ private fun shortType(t: SlotType) = when (t) {
 }
 
 /** Form fields for programming a slot; shared by the slot screen and recipe editor. */
-fun slotProgramFields(kind: Prog, slot: Slot?, overwriting: Boolean, forRecipe: Boolean = false): List<Field> {
+fun slotProgramFields(
+    kind: Prog, slot: Slot?, overwriting: Boolean, forRecipe: Boolean = false,
+    defaultEnter: Boolean = true, output: OtpOutputSettings? = null,
+): List<Field> {
     val common = listOfNotNull(
-        if (kind != Prog.CHALRESP) Field.Check("enter", "Append Enter after output", true) else null,
+        if (kind != Prog.CHALRESP) Field.Check("enter", "Append Enter after output", defaultEnter) else null,
+        output?.let { o ->
+            val extra = o.changesFromDefault().filterNot { it.startsWith("tab") || it.contains("Enter") }
+            Field.Note(
+                (if (kind != Prog.CHALRESP) "Output: " + o.outputPattern(
+                    firstPart = if (kind == Prog.YUBICO_OTP) "public ID" else null,
+                    secondPart = when (kind) { Prog.YUBICO_OTP -> "OTP"; Prog.HOTP -> "code"; else -> "password" },
+                ) + ". " else "") +
+                    (if (extra.isNotEmpty()) "Options: ${extra.joinToString()}. " else "") +
+                    "Change these under Settings → OTP output."
+            )
+        },
         if (!forRecipe) Field.Text("cur", "Current access code (hex, if set)") else null,
         Field.Text("new", "New access code (hex, optional)", supporting = "6 bytes / 12 hex digits. Protects the slot from changes."),
         if (overwriting && slot != null) Field.Note("Slot ${slot.num} is programmed. Its current credential will be overwritten.") else null,
@@ -312,10 +347,12 @@ fun parseSlotProgram(kind: Prog, v: FormValues): Pair<String?, Pair<SlotProgram,
 
 @Composable
 private fun ProgramDialog(vm: AppViewModel, slot: Slot, kind: Prog, overwriting: Boolean, onDone: () -> Unit) {
-    FormDialog("${kind.title} · slot ${slot.num}", slotProgramFields(kind, slot, overwriting), "Write", onDismiss = onDone) { v ->
+    val out by vm.settings.otpOutput.collectAsStateWithLifecycle()
+    FormDialog("${kind.title} · slot ${slot.num}",
+        slotProgramFields(kind, slot, overwriting, defaultEnter = out.appendEnter, output = out), "Write", onDismiss = onDone) { v ->
         val (err, parsed) = parseSlotProgram(kind, v)
         if (err != null || parsed == null) return@FormDialog err ?: "Invalid input"
-        vm.otp.program(slot, parsed.first, parsed.second)
+        vm.otp.program(slot, parsed.first, parsed.second.copy(output = out))
         null
     }
 }

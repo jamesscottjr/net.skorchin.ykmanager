@@ -2,6 +2,18 @@
 
 Each `## vX.Y` section is copied into the GitHub Release body by `.github/workflows/release.yml`.
 
+## v2.29 (versionCode 31)
+
+- Settings → OTP output: the Settings tab of the Windows YubiKey Personalization Tool —
+  Tab before/after first part/after OTP, Enter, 0.5 s delays, output speed throttling
+  (10/20/30 ms pacing), numeric keypad, fast trigger, send reference string, serial number
+  visibility (button at startup, USB descriptor, API), invert LED and allow update
+- Live preview of what a touch types; settings apply to every Yubico OTP, OATH-HOTP and static
+  password slot the app programs
+- OTP slots: "Update settings" rewrites a programmed keyboard slot's output settings without
+  replacing its credential (requires Allow update, firmware 2.3+)
+- Recipes: each slot step stores the output settings in effect when it was added
+
 ## v2.28 (versionCode 30)
 
 - Passkeys: tap a passkey to see everything the YubiKey stores about it — relying party

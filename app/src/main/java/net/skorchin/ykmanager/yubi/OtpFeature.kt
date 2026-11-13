@@ -3,6 +3,7 @@ package net.skorchin.ykmanager.yubi
 import android.content.Context
 import com.yubico.yubikit.android.transport.nfc.NfcYubiKeyDevice
 import com.yubico.yubikit.core.YubiKeyDevice
+import com.yubico.yubikit.core.application.CommandException
 import com.yubico.yubikit.yubiotp.HmacSha1SlotConfiguration
 import com.yubico.yubikit.yubiotp.HotpSlotConfiguration
 import com.yubico.yubikit.yubiotp.Slot
@@ -98,7 +99,11 @@ data class SlotWriteOptions(
     val appendEnter: Boolean = true,
     val currentAccessCodeHex: String = "",
     val newAccessCodeHex: String = "",
-)
+    /** Output/device flags (Settings → OTP output). [appendEnter] overrides its Enter choice. */
+    val output: OtpOutputSettings = OtpOutputSettings(),
+) {
+    val effectiveOutput: OtpOutputSettings get() = output.copy(appendEnter = appendEnter)
+}
 
 class SlotHistoryStore(context: Context) {
     private val prefs = context.getSharedPreferences("slot_history", Context.MODE_PRIVATE)
@@ -279,6 +284,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
             val newAcc = parseAccessCode(opts.newAccessCodeHex) ?: curAcc
             val details = linkedMapOf<String, String>()
             var dialog: InfoDialog? = null
+            val out = opts.effectiveOutput
 
             val type: SlotType
             val write: (YubiOtpSession) -> Unit
@@ -310,7 +316,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                     write = { s ->
                         s.putConfiguration(
                             slot,
-                            YubiOtpSlotConfiguration(publicId, privateId, key).appendCr(opts.appendEnter),
+                            YubiOtpSlotConfiguration(publicId, privateId, key).also { out.applyTo(it, keyboard = true, yubicoOtp = true) },
                             newAcc, curAcc,
                         )
                     }
@@ -331,7 +337,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                     if (secret.size > 20) throw UserFacingException("HOTP secret must be at most 20 bytes")
                     details["Digits"] = if (program.digits8) "8" else "6"
                     write = { s ->
-                        var c = HotpSlotConfiguration(secret).digits8(program.digits8).appendCr(opts.appendEnter)
+                        var c = HotpSlotConfiguration(secret).digits8(program.digits8).also { out.applyTo(it, keyboard = true) }
                         if (program.initialCounter > 0) c = c.imf(program.initialCounter)
                         s.putConfiguration(slot, c, newAcc, curAcc)
                     }
@@ -347,7 +353,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                     details["Length"] = pw.length.toString()
                     write = { s ->
                         s.putConfiguration(
-                            slot, StaticPasswordSlotConfiguration(codes).appendCr(opts.appendEnter), newAcc, curAcc
+                            slot, StaticPasswordSlotConfiguration(codes).also { out.applyTo(it, keyboard = true) }, newAcc, curAcc
                         )
                     }
                     if (program.password.isNullOrEmpty()) {
@@ -368,7 +374,7 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                     write = { s ->
                         s.putConfiguration(
                             slot,
-                            HmacSha1SlotConfiguration(secret).requireTouch(program.requireTouch).lt64(true),
+                            HmacSha1SlotConfiguration(secret).requireTouch(program.requireTouch).lt64(true).also { out.applyTo(it, keyboard = false) },
                             newAcc, curAcc,
                         )
                     }
@@ -382,7 +388,17 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
                 }
             }
 
-            core.otp(device) { write(it) }
+            try {
+                core.otp(device) { write(it) }
+            } catch (e: UnsupportedOperationException) {
+                throw UserFacingException("This YubiKey's firmware does not support one of the selected OTP output settings " +
+                    "(${out.changesFromDefault().joinToString().ifEmpty { "defaults" }}). Change them under Settings → OTP output.")
+            }
+            if (type != SlotType.CHALRESP) details["Output"] = out.outputPattern(
+                firstPart = if (type == SlotType.YUBICO_OTP) "public ID" else null, secondPart = outputPart(type),
+            )
+            out.changesFromDefault().filterNot { it.startsWith("tab") || it.contains("Enter") }
+                .takeIf { it.isNotEmpty() }?.let { details["Options"] = it.joinToString() }
             if (newAcc != null) details["Access code"] = "set"
             history.put(serial, slot, SlotHistory(type, System.currentTimeMillis(), details))
             identified.remove(idKey(serial, slot))
@@ -391,6 +407,56 @@ class OtpFeature(private val core: YubiKeyCore, context: Context) {
     }
 
     /** Delete [slot] on an already-connected [device]. */
+    /**
+     * Rewrites only the output/device flags of a programmed slot, keeping its credential
+     * (the Personalization Tool's "Update settings"). Needs firmware 2.3+ and a slot that was
+     * programmed with "Allow update". The key cannot report the current flags, so every
+     * updatable flag is set from [output].
+     */
+    /**
+     * Rewrites the updatable flags of a keyboard slot (Yubico OTP, HOTP, static) without touching
+     * its credential. Not offered for challenge-response slots: the firmware merges the pacing bits
+     * of an update into the slot, and on those slots the same bits mean "HMAC < 64 bytes" and
+     * "require touch".
+     */
+    fun updateOutput(slot: Slot, output: OtpOutputSettings, accessCodeHex: String) {
+        core.run("update slot ${slot.num} settings") { device ->
+            val serial0 = core.keyInfo.value?.serial
+            val known = history.get(serial0, slot)?.type
+            if (known == SlotType.CHALRESP || known == SlotType.CHALRESP_OTHER) throw UserFacingException(
+                "Slot ${slot.num} holds a challenge-response credential; its settings can only be changed by reprogramming it.")
+            val acc = parseAccessCode(accessCodeHex)
+            val cfg = com.yubico.yubikit.yubiotp.UpdateConfiguration().also { output.applyTo(it, keyboard = true) }
+            try {
+                core.otp(device) { it.updateConfiguration(slot, cfg, acc, acc) }
+            } catch (e: UnsupportedOperationException) {
+                throw UserFacingException("This YubiKey cannot update slot settings (firmware 2.3 or newer is needed, " +
+                    "and every selected option must be supported).")
+            } catch (e: CommandException) {
+                throw UserFacingException("The YubiKey refused the update. The slot was probably programmed without " +
+                    "\"Allow update\", or the access code is wrong. Reprogram the slot to change its settings.")
+            }
+            val serial = core.keyInfo.value?.serial
+            history.get(serial, slot)?.let { h ->
+                val d = LinkedHashMap(h.details)
+                d["Output"] = output.outputPattern(
+                    firstPart = if (h.type == SlotType.YUBICO_OTP) "public ID" else null, secondPart = outputPart(h.type),
+                )
+                output.changesFromDefault().filterNot { it.startsWith("tab") || it.contains("Enter") }
+                    .let { if (it.isEmpty()) d.remove("Options") else d["Options"] = it.joinToString() }
+                history.put(serial, slot, h.copy(details = d))
+            }
+            core.toast("Slot ${slot.num} settings updated")
+        }
+    }
+
+    private fun outputPart(t: SlotType) = when (t) {
+        SlotType.YUBICO_OTP -> "OTP"
+        SlotType.HOTP -> "code"
+        SlotType.STATIC -> "password"
+        else -> "output"
+    }
+
     suspend fun deleteOn(device: YubiKeyDevice, slot: Slot, accessCodeHex: String, serial: Int?) {
         core.otp(device) { it.deleteConfiguration(slot, parseAccessCode(accessCodeHex)) }
         history.put(serial, slot, null)
