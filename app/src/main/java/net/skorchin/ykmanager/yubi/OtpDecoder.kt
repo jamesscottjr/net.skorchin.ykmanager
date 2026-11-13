@@ -73,7 +73,9 @@ object OtpDecoder {
 
         val publicId = otp.dropLast(TOKEN_CHARS)
         val cipherText = Encoding.fromModhex(otp.takeLast(TOKEN_CHARS))
-        val c = Cipher.getInstance("AES/ECB/NoPadding")  // nosemgrep: one 16-byte block, as the Yubico OTP format defines
+        // The Yubico OTP format is a single 16-byte AES block (no chaining, nothing to replay): ECB is
+        // the defined construction, and this only decrypts for display.
+        val c = Cipher.getInstance("AES/ECB/NoPadding") // nosemgrep: kotlin.lang.security.ecb-cipher.ecb-cipher, mobsf.mobsfscan.kotlin.crypto.android_kotlin_aes_ecb
         c.init(Cipher.DECRYPT_MODE, SecretKeySpec(Encoding.fromHex(key), "AES"))
         val p = c.doFinal(cipherText)
         fun u(i: Int) = p[i].toInt() and 0xff

@@ -29,6 +29,7 @@ independent third-party audit or a penetration test.
 | Rule | Location | Disposition |
 |---|---|---|
 | `android_kotlin_sha1` | `OathFeature.accessKey` | Expected. HMAC-SHA1 is mandated by the YubiKey OATH protocol (YKOATH VALIDATE challenge). Annotated with `nosemgrep` and a comment. |
+| `ecb-cipher`, `android_kotlin_aes_ecb` | `OtpDecoder.decode` (v2.31) | Expected. A Yubico OTP is one 16-byte AES block by definition; the decoder only decrypts it on the device for display, so there is no chaining or replay concern. Annotated with `nosemgrep` and a comment. |
 | `android_kotlin_pending_intent_not_immutable` (×2) | `YubiKeyPasskeyService` | Expected. Credential Manager requires a mutable PendingIntent to attach the provider request; the intent is explicit (own activity) and unique per entry, per Android's documented pattern. Annotated. |
 | `android_kotlin_logging` (×2) | `AccessKeyStore` | Logs the OATH device ID (a public identifier) and an exception when a remembered key cannot be read or written. No key material or passwords are logged anywhere in the app. Annotated. |
 
